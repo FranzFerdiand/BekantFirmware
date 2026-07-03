@@ -33,6 +33,7 @@ typedef enum {
     INPUT_MEM_UP,
     INPUT_MEM_DOWN,
     INPUT_SAVE,
+    INPUT_FACTORY_RESET,
 } INPUT_t;
 
 void btn_init(void);

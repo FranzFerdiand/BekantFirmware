@@ -68,7 +68,7 @@ static bool btn_debounce(ButtonState_t now_btn) {
 
 /* State that the debounce loop calls once per 50 ms tick. */
 typedef struct {
-    uint8_t  save_hold;
+    uint8_t  both_hold_count;
     /* Double-tap tracking — always on. */
     uint8_t  double_click_timer;
     bool     waiting_for_second_up;
@@ -79,12 +79,17 @@ typedef struct {
 /* SAVE_HOLD_THRESHOLD: 50 ms × 60 = 3 seconds of both-buttons-held. */
 #define SAVE_HOLD_THRESHOLD  60
 
+/* FACTORY_HOLD_THRESHOLD: 50 ms × 200 = 10 seconds of both-buttons-held.
+ * Holding both buttons for 10 seconds transitions the gesture from save
+ * (3 s) to factory-reset (10 s).  See ../oem_reconstruction/docs/FACTORY_RESET.md. */
+#define FACTORY_HOLD_THRESHOLD  200
+
 /* Double-click window: 50 ms × 10 = 500 ms. */
 #define DOUBLE_CLICK_WINDOW  10
 
 INPUT_t btn_gesture(ButtonState_t btn) {
     static InputState_t input = {
-        .save_hold              = 0,
+        .both_hold_count        = 0,
         .double_click_timer     = 0,
         .waiting_for_second_up  = false,
         .waiting_for_second_down = false,
@@ -121,9 +126,16 @@ INPUT_t btn_gesture(ButtonState_t btn) {
                     input.state = INPUT_DOWN;
                 }
             } else if (PRESSED(btn.UP) && PRESSED(btn.DOWN)) {
-                if (++input.save_hold >= SAVE_HOLD_THRESHOLD) {
-                    input.save_hold = 0;
-                    input.state     = INPUT_SAVE;
+                /* Both buttons held.  Increment the hold counter and
+                 * check thresholds from highest to lowest, so a tick
+                 * that crosses 200 fires FACTORY (not SAVE). */
+                uint8_t c = ++input.both_hold_count;
+                if (c >= FACTORY_HOLD_THRESHOLD) {
+                    input.both_hold_count = 0;
+                    input.state = INPUT_FACTORY_RESET;
+                } else if (c >= SAVE_HOLD_THRESHOLD) {
+                    input.both_hold_count = 0;
+                    input.state = INPUT_SAVE;
                 } else {
                     input.state = INPUT_IDLE;
                 }
@@ -133,8 +145,26 @@ INPUT_t btn_gesture(ButtonState_t btn) {
             break;
 
         case INPUT_SAVE:
+            /* Continue counting in SAVE so a user who keeps holding
+             * past 10 s can escalate to factory-reset.  Holding both
+             * buttons for the full 200 ticks while in SAVE fires
+             * INPUT_FACTORY_RESET on transition. */
+            if (PRESSED(btn.UP) && PRESSED(btn.DOWN)) {
+                if (++input.both_hold_count >= FACTORY_HOLD_THRESHOLD) {
+                    input.both_hold_count = 0;
+                    input.state = INPUT_FACTORY_RESET;
+                } else {
+                    input.state = INPUT_SAVE;
+                }
+            } else {
+                input.state = INPUT_IDLE;
+            }
+            break;
+
+        case INPUT_FACTORY_RESET:
+            /* Terminal state — stay until the user releases. */
             input.state = (PRESSED(btn.UP) && PRESSED(btn.DOWN))
-                            ? INPUT_SAVE : INPUT_IDLE;
+                            ? INPUT_FACTORY_RESET : INPUT_IDLE;
             break;
 
         case INPUT_UP:

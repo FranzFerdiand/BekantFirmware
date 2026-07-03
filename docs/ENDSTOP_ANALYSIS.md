@@ -38,14 +38,10 @@ The user reports two related symptoms:
 1. **Relay stays active** when the desk is at the bottom physical
    endstop.
 2. **No factory-reset** of the saved position via the 10-second
-   both-buttons-hold gesture the OEM firmware supports.
-
-Both symptoms may stem from the same underlying gap: the ivanwick
-project appears not to have a 10-second press-and-hold sequence
-at all in its button state machine. The state machine in `btn/btn.c`
-only handles the 3-second save, not 10-second reset. And the
-bctrl layer does not appear to watch the encoder to detect a
-stalled leg.
+   both-buttons-hold gesture the OEM firmware supports. (Note: as
+   of this project, **symptom #2 is fixed in `src/`** — see the
+   "Bonus: factory-reset support" section below. Symptom #1 is
+   still addressed tentatively by `bekant/endstop.c`.)
 
 ## How the original IKEA firmware appears to differ
 
@@ -94,17 +90,17 @@ are recovered from the state-indexed lookup at disassembly
 **0x0d5–0x0ff** (a switch on RAM `0x52`, writing to RAM
 `0x161` — i.e. bank-2 register `0x61`):
 
-| OEM state (`0x52`) | OEM BCMD byte | What we believe it does          |
-| ------------------ | ------------- | -------------------------------- |
-| 0, 1 (default)     | `0x50`        | Idle / not moving                |
-| 2                  | `0x49`        | Initialize / wake bus            |
-| 3                  | `0xca`        | Move up (fast)                   |
-| 4                  | `0x8b`        | Move up (slow)                   |
-| 5                  | `0x4c`        | Move down (slow)                 |
-| 6                  | `0x0d`        | Move down (fast)                 |
-| 7                  | `0x8e`        | Decelerate (overshoot)           |
-| 8                  | `0xcf`        | Pre-stop / "almost there"        |
-| —                  | `0xfc`        | Universal STOP (endstop handler) |
+|  OEM state (`0x52`)  |  OEM BCMD byte  |  What we believe it does           |
+| --------------------  ---------------  ---------------------------------- |
+|  0, 1 (default)      |  `0x50`         |  Idle / not moving                 |
+|  2                   |  `0x49`         |  Initialize / wake bus             |
+|  3                   |  `0xca`         |  Move up (fast)                    |
+|  4                   |  `0x8b`         |  Move up (slow)                    |
+|  5                   |  `0x4c`         |  Move down (slow)                  |
+|  6                   |  `0x0d`         |  Move down (fast)                  |
+|  7                   |  `0x8e`         |  Decelerate (overshoot)            |
+|  8                   |  `0xcf`         |  Pre-stop / "almost there"         |
+|  —                   |  `0xfc`         |  Universal STOP (endstop handler)  |
 
 > The state mapping in this table is *inferred* from the
 > state-indexed dispatcher at `0x00d5–0x00ff`. The `What we believe
@@ -113,17 +109,17 @@ are recovered from the state-indexed lookup at disassembly
 
 Compare with what ivanwick uses in `bekant/bctrl.c`:
 
-| ivanwick name          | ivanwick value | OEM actual      | Match? |
-| ---------------------- | -------------- | --------------- | ------ |
-| `BCMD_STOP_IDLE`       | `0xfc`         | `0xfc`          | ✓      |
-| `BCMD_AFTER_SCAN_INIT` | `0xbf`         | `0x50`          | ✗      |
-| `BCMD_UP`              | `0x86`         | `0xca` / `0x8b` | ✗      |
-| `BCMD_DOWN`            | `0x85`         | `0x4c` / `0x0d` | ✗      |
-| `BCMD_DECEL`           | `0x87`         | `0x8e`          | ✗      |
-| `BCMD_PRE_STOP`        | `0x84`         | `0xcf`          | ✗      |
-| `BCMD_ERR_UP`          | `0xbc`         | (none)          | ✗      |
-| `BCMD_ERR_DOWN`        | `0xbd`         | (none)          | ✗      |
-| `BCMD_PRE_MOVE`        | `0xc4`         | `0x49`          | ✗      |
+|  ivanwick name           |  ivanwick value  |  OEM actual       |  Match?  |
+| ------------------------  ----------------  -----------------  -------- |
+|  `BCMD_STOP_IDLE`        |  `0xfc`          |  `0xfc`           |  ✓       |
+|  `BCMD_AFTER_SCAN_INIT`  |  `0xbf`          |  `0x50`           |  ✗       |
+|  `BCMD_UP`               |  `0x86`          |  `0xca` / `0x8b`  |  ✗       |
+|  `BCMD_DOWN`             |  `0x85`          |  `0x4c` / `0x0d`  |  ✗       |
+|  `BCMD_DECEL`            |  `0x87`          |  `0x8e`           |  ✗       |
+|  `BCMD_PRE_STOP`         |  `0x84`          |  `0xcf`           |  ✗       |
+|  `BCMD_ERR_UP`           |  `0xbc`          |  (none)           |  ✗       |
+|  `BCMD_ERR_DOWN`         |  `0xbd`          |  (none)           |  ✗       |
+|  `BCMD_PRE_MOVE`         |  `0xc4`          |  `0x49`           |  ✗       |
 
 **Apparently, only `0xfc` matches.** The other ivanwick BCMD
 values appear to be the ivanwick project's own interpretation
@@ -234,14 +230,31 @@ While the disassembly was being analyzed, the OEM firmware's
 recovered. It lives in the same state machine (disassembly
 **0x05c0–0x068d**), with the magic-byte check at **0x05d8**.
 
-The reconstructed code in
-`oem_reconstruction/bekant/bui.c::bui_factory_reset()`
-implements the reset, but it is **not** wired up to the button
-state machine in this reconstruction. A full implementation
-would extend `btn/btn.c` with a second SAVE_HOLD_THRESHOLD of 200
-(10 s) that fires `bui_factory_reset()` instead of the regular
-3-second save. That is left as future work — the primary goal
-of this project was the endstop fix.
+The disassembly-derived reconstructed code in
+`oem_reconstruction/bekant/bui.c::bui_factory_reset()` and
+`oem_reconstruction/bekant/eeprom_defaults.c` still exists as a
+reference, but the **buildable firmware in `src/` now implements
+its own version** using a simpler stacked-threshold approach:
+
+- `src/btn/btn.c:128-168` — stacked 3 s/10 s thresholds.
+  `both_hold_count` increments while both buttons are held; at
+  `SAVE_HOLD_THRESHOLD=60` fires `INPUT_SAVE`; continues counting;
+  at `FACTORY_HOLD_THRESHOLD=200` fires `INPUT_FACTORY_RESET`.
+- `src/bekant/bui.c::bui_factory_reset()` — calls
+  `eeprom_factory_reset()` (writes 4 OEM values to EEPROM) plus
+  an override of the two BUI slots to the endstop values, then
+  `bctrl_set_target(BCTRL_CLICK)` for the second audible click.
+- `src/bekant/eeprom_defaults.{c,h}` — raw-register EEPROM
+  read/write helpers and the canonical 4-position OEM write.
+
+The OEM-style BCTRL state-machine path (`bctrl_factory_magic` in
+`oem_reconstruction/bekant/bctrl.c`) is **not** integrated — the
+buildable firmware uses the stacked-threshold path above instead,
+which is simpler and avoids touching the rest of the BCTRL plane.
+
+See `oem_reconstruction/docs/FACTORY_RESET.md` for the
+disassembly-derived OEM reference and the `Test scenarios`
+section of `USAGE.md` for the user-facing behaviour summary.
 
 ## Disassembly walkthrough
 

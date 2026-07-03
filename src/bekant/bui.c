@@ -4,6 +4,7 @@
 
 #include "bui.h"
 #include "bctrl.h"
+#include "eeprom_defaults.h"
 #include <stdlib.h> // abs()
 
 /* For syntax-only checks without the real XC8 PIC SFR headers,
@@ -25,25 +26,36 @@ int16_t high_pos;
 int16_t low_pos;
 int16_t cur_pos; // accessed by bui_input() and bui_set_pos()
 
-typedef struct {
-    int16_t low_pos;
-    int16_t high_pos;
-} BUI_saved_t;
-
-//__EEPROM_DATA(0x36, 0x06, 0x00, 0x16, 0, 0, 0, 0);
-__eeprom BUI_saved_t saved = {
-    .high_pos = 0x1600,
-    .low_pos = 0x0636
-};
+/* Memory positions are stored in EEPROM via the eeprom_defaults.c
+ * helpers (raw register writes) rather than via __eeprom-qualified
+ * variables.  This lets the same EEPROM be written from both mainline
+ * (bui_init / bui_factory_reset) and from the Timer2 ISR (bui_save_pos
+ * called via btn_timer) without tripping XC8 error 1401.
+ *
+ * Address map (matches the OEM 4-position layout in
+ * oem_reconstruction/docs/FACTORY_RESET.md):
+ *   EEPROM[0x00..0x01] = low_pos  (also OEM_BOTTOM_ENDSTOP slot)
+ *   EEPROM[0x02..0x03] = high_pos (overridden OEM_LOW_MEMORY slot;
+ *                                    BUI wants the top endstop here)
+ *   EEPROM[0x04..0x05] = OEM_HIGH_MEMORY (not used by BUI directly)
+ *   EEPROM[0x06..0x07] = OEM_TOP_ENDSTOP (not used by BUI directly)
+ */
+#define EEPROM_ADDR_LOW_POS  0x00u
+#define EEPROM_ADDR_HIGH_POS 0x02u
 
 void bui_save_pos(int16_t save_pos);
+void bui_factory_reset(void);
 
 /**
  * Initialize from stored position values.
+ *
+ * Called from mainline (main.c calls InitApp which calls bui_init).
+ * EEPROM reads from raw registers are NOT __eeprom-qualified, so
+ * XC8 does not consider this an interrupt/mainline conflict.
  */
 void bui_init(void) {
-    low_pos = saved.low_pos;
-    high_pos = saved.high_pos;
+    low_pos  = (int16_t)eeprom_load16(EEPROM_ADDR_LOW_POS);
+    high_pos = (int16_t)eeprom_load16(EEPROM_ADDR_HIGH_POS);
 }
 
 /**
@@ -67,6 +79,8 @@ void bui_input(INPUT_t input) {
                 bctrl_set_target(BCTRL_DOWN);
             } else if (input == INPUT_SAVE) {
                 bui_save_pos(cur_pos);
+            } else if (input == INPUT_FACTORY_RESET) {
+                bui_factory_reset();
             }
             break;
 
@@ -163,12 +177,46 @@ void bui_save_pos(int16_t save_pos) {
     // before it reaches the target position, to allow for deceleration.
     if (diff_low < diff_high) {
         low_pos = save_pos + BCTRL_DECEL_MARGIN;
-        saved.low_pos = low_pos;
+        eeprom_store16(EEPROM_ADDR_LOW_POS, (uint16_t)low_pos);
     } else {
         high_pos = save_pos - BCTRL_DECEL_MARGIN;
-        saved.high_pos = high_pos;
+        eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
     }
 
     // Click feedback
+    bctrl_set_target(BCTRL_CLICK);
+}
+
+/**
+ * Factory-reset handler.
+ *
+ * Fired by btn.c after the user holds both buttons for 10 seconds
+ * (the INPUT_FACTORY_RESET event).  Resets the saved memory positions
+ * to the OEM endstops and writes the OEM 4-position layout to EEPROM.
+ *
+ * Sequence:
+ *   1. eeprom_factory_reset() — writes 4 OEM defaults to EEPROM[0x00..0x07].
+ *      This populates the two intermediate OEM memory positions
+ *      (0x00a0, 0x0120) at slots 0x02 and 0x04 which the BUI layer
+ *      does not use directly.
+ *   2. Override the two BUI slots at 0x00 and 0x02 with the OEM endstops,
+ *      so MEM_UP / MEM_DOWN move to the physical limits of the desk.
+ *   3. Update in-memory low_pos / high_pos.
+ *   4. Single relay click as audible feedback (same as bui_save_pos).
+ *
+ * See oem_reconstruction/docs/FACTORY_RESET.md for OEM behaviour.
+ */
+void bui_factory_reset(void) {
+    eeprom_factory_reset();
+
+    /* Override the BUI's high_pos slot with the OEM top-endstop value
+     * (eeprom_factory_reset wrote OEM_LOW_MEMORY=0x00a0 there, which
+     * the BUI doesn't want — MEM_UP should go all the way up). */
+    eeprom_store16(EEPROM_ADDR_LOW_POS,  OEM_BOTTOM_ENDSTOP);
+    eeprom_store16(EEPROM_ADDR_HIGH_POS, OEM_TOP_ENDSTOP);
+
+    low_pos  = (int16_t)eeprom_load16(EEPROM_ADDR_LOW_POS);
+    high_pos = (int16_t)eeprom_load16(EEPROM_ADDR_HIGH_POS);
+
     bctrl_set_target(BCTRL_CLICK);
 }

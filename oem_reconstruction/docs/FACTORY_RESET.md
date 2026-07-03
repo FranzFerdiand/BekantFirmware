@@ -62,12 +62,12 @@ reading.
 The four default positions we believe the factory-reset
 writes:
 
-| Address | Value  | ivanwick equivalent (if any) |
-| ------- | ------ | ---------------------------- |
-| 0x00    | 0x0021 | 0x0636 (sitting)             |
-| 0x02    | 0x00a0 | -                            |
-| 0x04    | 0x0120 | -                            |
-| 0x06    | 0x01d2 | 0x1600 (standing)            |
+|  Address  |  Value   |  ivanwick equivalent (if any)  |
+| ---------  --------  ------------------------------ |
+|  0x00     |  0x0021  |  0x0636 (sitting)              |
+|  0x02     |  0x00a0  |  -                             |
+|  0x04     |  0x0120  |  -                             |
+|  0x06     |  0x01d2  |  0x1600 (standing)             |
 
 The ivanwick firmware only stores two positions (sitting
 and standing), so the OEM firmware *appears* to have **two
@@ -93,7 +93,7 @@ factory-reset.
 ## What the C reconstruction does
 
 The `bekant/eeprom_defaults.c` file has the
-`bui_factory_reset()` function that performs what we think
+`eeprom_factory_reset()` function that performs what we think
 is the actual EEPROM rewrite. It is called from the BUI
 layer when the factory-reset path is detected (in the
 OEM firmware, we believe this is the state machine
@@ -110,18 +110,56 @@ this by:
    to `bctrl_factory_magic` and set the BCTRL state to 1.
 3. The BCTRL state machine then handles the actual reset.
 
-## What's not implemented
+## What's not implemented in `oem_reconstruction/`
 
-The C reconstruction does not wire the button handler to
-the BUI layer for the factory-reset. The ivanwick-style
-`btn/btn.c` in `../src/btn/btn.c` (and the unified variant
-in this folder's `btn/btn.c`) treats the 3-second
-both-buttons-hold as the "save" gesture and does not
-distinguish a 10-second hold. To fully support what we
-believe to be the OEM factory-reset, the button handler
-would need a second threshold of 200 ticks (10 seconds)
-that triggers `bui_factory_reset()` instead of the
-regular save.
+The ivanwick-derived state machine in this folder's
+`btn/btn.c` and `bekant/bui.c` are placeholders — they
+recognise the 3-second save gesture but punt the
+10-second factory-reset sequence to a "higher level"
+that is not present here.  No file in `oem_reconstruction/`
+is compiled by the project Makefile (which builds only
+`src/`); the files here serve as a disassembler-derived
+reference, not as buildable firmware.
+
+## Buildable implementation in `src/`
+
+The buildable firmware in `../src/` does implement the
+factory-reset, using a **stacked-threshold** button state
+machine rather than a BCTRL-state-machine dispatcher:
+
+|  File                               |  Role                                                                            |
+| -----------------------------------  -------------------------------------------------------------------------------- |
+|  `src/btn/btn.c`                    |  Stacked thresholds: 60 ticks → `INPUT_SAVE`, 200 ticks → `INPUT_FACTORY_RESET`  |
+|  `src/btn/btn.h`                    |  `INPUT_FACTORY_RESET` enum value                                                |
+|  `src/bekant/bui.c`                 |  `bui_input(INPUT_FACTORY_RESET)` → `bui_factory_reset()`                        |
+|  `src/bekant/eeprom_defaults.{c,h}` |  `eeprom_factory_reset()` (writes 4 OEM positions to EEPROM)                     |
+|  `src/bekant/eeprom_defaults.{c,h}` |  `eeprom_load16` / `eeprom_store16` raw-register helpers                         |
+|  `Makefile`                         |  Adds `bekant/eeprom_defaults.c` to `SRCS`                                       |
+
+The stacked-threshold approach intentionally differs
+from the disassembly-derived `BCTRL_STATE_FACTORY_RESET_*`
+enumeration above. It is simpler, fits the existing
+ivanwick + endstop-fixer architecture, and gives the
+user distinct SAVE / FACTORY_RESET events on the wire
+(BUI consumes each event separately).
+
+Behaviour summary, derived from the state machine
+(`src/btn/btn.c:128-168`):
+
+|  Hold duration            |  Gesture fired                 |  Notes                                    |
+| -------------------------  ------------------------------  ----------------------------------------- |
+|  0-59 ticks (< 3 s)       |  none                          |  Counter increments but does not fire     |
+|  60 ticks (= 3 s)         |  `INPUT_SAVE`                  |  Save current position to EEPROM          |
+|  61-199 ticks (3-10 s)    |  `INPUT_SAVE` (already fired)  |  Counter continues toward factory         |
+|  200 ticks (= 10 s)       |  `INPUT_FACTORY_RESET`         |  Writes 4 OEM defaults to EEPROM          |
+|  > 200 ticks              |  (no further events)           |  Stays in `INPUT_FACTORY_RESET` state     |
+|  release                  |  `INPUT_IDLE`                  |  Counter resets for next gesture          |
+
+A user who holds both buttons for the full 10 s will
+see **two events** — `INPUT_SAVE` at 3 s (a single relay
+click) and `INPUT_FACTORY_RESET` at 10 s (single click
+after EEPROM is rewritten to OEM defaults). The second
+event's EEPROM write supersedes the first.
 
 ## See also
 

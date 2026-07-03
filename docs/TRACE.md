@@ -31,7 +31,10 @@ Additionally:
 
 - `UP` and `DOWN` both pressed **while in `UP`** → `MEM_UP` (combo-press).
 - `UP` and `DOWN` both pressed **while in `DOWN`** → `MEM_DOWN` (combo-press).
-- Both buttons held for 3 s → `SAVE`.
+- Both buttons held: stacked thresholds — 3 s (`SAVE_HOLD_THRESHOLD=60`)
+  → `SAVE`, continues counting toward 10 s; 10 s (`FACTORY_HOLD_THRESHOLD=200`)
+  → `FACTORY_RESET`. Holding past 10 s fires both events on the wire;
+  the second supersedes the first in EEPROM.
 
 ## Trace A — tap `△` then release, no second tap (regular up movement)
 
@@ -123,10 +126,64 @@ state   : IDLE IDLE IDLE  ...                  SAVE
 events  :                                ↑ INPUT_SAVE published
 ```
 
-`save_hold` increments on every 50 ms tick while both are pressed;
-when it reaches 60 (3 s), the state fires `INPUT_SAVE` and stays
-in `INPUT_SAVE` until both buttons are released. `bui_save_pos()`
-writes the new value to EEPROM and clicks the legs (BCMD_CLICK).
+`both_hold_count` increments on every 50 ms tick while both are
+pressed (whether the state is `IDLE` or `SAVE`). When it reaches
+`SAVE_HOLD_THRESHOLD` (60, i.e. 3 s) from `IDLE`, the state
+transitions to `SAVE` and fires `INPUT_SAVE`. The counter is reset
+to 0 on the `IDLE → SAVE` transition so it can be re-used to
+count toward the factory-reset threshold (see Trace K).
+
+`bui_save_pos()` (called from `BUI_STOP → INPUT_SAVE`) writes the
+new value to the closest of the upper/lower EEPROM slots via
+`eeprom_store16()` and clicks the legs (`BCMD_CLICK`).
+
+From `SAVE`, the gesture continues counting while both remain
+pressed; releasing returns to `IDLE` (one `INPUT_IDLE` event fires).
+
+## Trace K — both buttons held 10 s (factory-reset)
+
+```
+gesture :   U+D U+D U+D ... U+D U+D U+D U+D U+D ... (200 ticks)
+state   : IDLE ........ SAVE ........ SAVE FACTORY_RESET IDLE
+events  :                ↑ INPUT_SAVE                      ↑ INPUT_IDLE
+                                          ↑ INPUT_FACTORY_RESET
+```
+
+Tick-by-tick:
+
+|  Tick    |  State                 |  both_hold_count  |  Transition / event                          |
+| --------  ----------------------  -----------------  -------------------------------------------- |
+|  1-59    |  IDLE                  |  1..59            |  none                                        |
+|  60      |  IDLE → SAVE           |  60 → 0           |  `INPUT_SAVE` published (BUI saves position) |
+|  61-199  |  SAVE                  |  1..139           |  none (held)                                 |
+|  200     |  SAVE → FACTORY_RESET  |  140 → 0          |  `INPUT_FACTORY_RESET` published             |
+|  201+    |  FACTORY_RESET         |  0                |  stays in `FACTORY_RESET` until release      |
+|  N       |  FACTORY_RESET → IDLE  |  (release)        |  `INPUT_IDLE` event published                |
+
+`bui_factory_reset()` (called from `BUI_STOP → INPUT_FACTORY_RESET`)
+performs:
+
+1. `eeprom_factory_reset()` writes the four OEM values
+   (`0x0021`, `0x00a0`, `0x0120`, `0x01d2`) to EEPROM offsets
+   `0x00..0x07`.
+2. Override the BUI's two slots (`EEPROM_ADDR_LOW_POS=0x00`,
+   `EEPROM_ADDR_HIGH_POS=0x02`) with the endstop values so
+   `MEM_UP` / `MEM_DOWN` move to the physical limits.
+3. Re-read `low_pos` / `high_pos` from EEPROM.
+4. `bctrl_set_target(BCTRL_CLICK)` for the second audible click.
+
+The user hears **two clicks** at the 3-s and 10-s marks. The
+final EEPROM state is the OEM defaults (the second write
+overwrites the first).
+
+### Counter persistence on brief releases
+
+The counter is **not** zeroed when both buttons are released
+while at < 60 ticks (pre-existing ivanwick behaviour). A user
+who holds to 50 ticks, releases for 5 ticks, and re-presses
+will reach the 60-tick threshold 15 ticks into the second
+press — and fire SAVE. This is a known minor UX wart, not a
+state-machine bug; same as in ivanwick.
 
 ## Trace I — combo-press then quick re-tap (no spurious second memory)
 

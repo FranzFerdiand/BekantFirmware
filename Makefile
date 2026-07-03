@@ -22,6 +22,7 @@ SRCS = \
     bekant/bctrl.c \
     bekant/bui.c \
     bekant/bscan.c \
+    bekant/eeprom_defaults.c \
     bekant/endstop.c \
     btn/btn.c \
     lin/lin_d.c

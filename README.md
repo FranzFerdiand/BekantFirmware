@@ -44,7 +44,15 @@ This project:
    the DieSteinhose "double-tap", or mix and match. The unified
    state machine in `btn/btn.c` *appears* to handle both. (Not
    yet tested on hardware.)
-2. **Includes a best-effort C reconstruction** of what we
+2. **Implements a 10-second factory-reset** by holding both
+   buttons. Distinct from the existing 3-second save gesture
+   (which saves the current position) the 10-second hold writes
+   the OEM endstop defaults to EEPROM. The two gestures share
+   one counter using a *stacked-threshold* state machine, so
+   a 10-second hold fires both events (SAVE at 3 s, FACTORY_RESET
+   at 10 s). See [USAGE.md](USAGE.md) for the user-facing
+   documentation and the test-scenarios table.
+3. **Includes a best-effort C reconstruction** of what we
    believe to be the original IKEA firmware in
    `oem_reconstruction/`, for future reference and as a
    *tentative* attempt at the endstop behaviour described in
@@ -56,7 +64,18 @@ The rest of the source is mostly identical to the ivanwick
 project (the original release), with these additions / fixes:
 
 - **`btn/`** rewritten to support both gesture styles at the
-  same time.
+  same time, plus the stacked 3 s/10 s thresholds for save /
+  factory-reset.
+- **`bekant/bui.c`** now responds to `INPUT_FACTORY_RESET` by
+  calling `bui_factory_reset()` which resets the saved memory
+  positions to the OEM endstops (0x0021 / 0x01d2).
+- **`bekant/eeprom_defaults.{c,h}`** provides raw-register
+  EEPROM read/write helpers and `eeprom_factory_reset()`.
+  Raw register access is used (instead of `__eeprom`-qualified
+  variables) so that EEPROM can be safely accessed from both
+  mainline (`bui_init`) and the Timer2 ISR call chain
+  (`btn_timer` → `bui_input` → `bui_save_pos`) without tripping
+  XC8 error 1401.
 - **`bekant/bctrl.{c,h}`** now uses what we believe to be the
   OEM BCMD values recovered from the disassembly
   (0xfc/0x50/0x49/0xca/0x8b/0x4c/0x0d/0x8e/0xcf). See
@@ -106,11 +125,12 @@ BekantFirmware/
     ├── interrupts.c                    ← void __interrupt() isr(void) (the ISR fix)
     ├── Makefile
     ├── btn/btn.h                        ← INPUT_t enum, gesture documentation
-    ├── btn/btn.c                        ← unified state machine (both gestures)
+    ├── btn/btn.c                        ← unified state machine; stacked 3 s/10 s thresholds
     ├── lin/lin_d.c / lin_d.h            ← LIN driver
     ├── bekant/bscan.c / bscan.h         ← startup bus scan
     ├── bekant/bctrl.c / bctrl.h         ← LIN control plane (now uses OEM BCMD values)
-    ├── bekant/bui.c / bui.h             ← upper-level UI
+    ├── bekant/bui.c / bui.h             ← upper-level UI (handles INPUT_SAVE + INPUT_FACTORY_RESET)
+    ├── bekant/eeprom_defaults.{c,h}     ← raw-reg EEPROM helpers, eeprom_factory_reset()
     ├── bekant/endstop.c / endstop.h     ← recovered endstop detector, wired in
     └── test_sfr_stubs.h / .c            ← syntax-only shim (real build uses src/ directly)
 ```
@@ -255,14 +275,21 @@ The ivanwick project's firmware stores the memory positions in the
 PIC's EEPROM at offsets `0x00` and `0x02`, with defaults
 `0x0636` and `0x1600`. If you flashed a fresh unit, these defaults
 are already correct. If you reprogrammed a unit that already had
-custom positions, you'll need to re-set them:
+custom positions, you have two options:
 
-- Move the desk to the new sitting height, then press and hold both
-  buttons for 3 seconds.
-- Move the desk to the new standing height, then press and hold
-  both buttons for 3 seconds.
+**Set manually** — move to each height, then hold both buttons
+for 3 s to save:
 
-See [USAGE.md](USAGE.md) for the full button reference.
+- Move the desk to the desired sitting height, then press and
+  hold both buttons for 3 seconds.
+- Move the desk to the desired standing height, then press and
+  hold both buttons for 3 seconds.
+
+**Factory reset** — hold both buttons for the full 10 seconds.
+The save gesture fires at 3 s, then the factory-reset fires at
+10 s and overwrites both memory slots with the OEM endstop values
+(0x0021 / 0x01d2). See [USAGE.md](USAGE.md) for the full button
+reference.
 
 ### 7. Close the controller and test
 
