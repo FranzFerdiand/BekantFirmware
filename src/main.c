@@ -57,5 +57,6 @@ void main(void) {
     
     while (1) {
         CLRWDT();
+        bui_service();  // deferred EEPROM writes (save / factory-reset)
     }
 }

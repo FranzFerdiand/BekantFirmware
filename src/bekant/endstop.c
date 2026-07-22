@@ -101,8 +101,8 @@ void endstop_init(void) {
  */
 static bool bctrl_is_moving(void) {
     /* The bctrl module exposes its state via the schedule: when the
-     * scheduled BCMD is one of the motion commands (UP_FAST, UP_SLOW,
-     * DOWN_FAST, DOWN_SLOW, DECEL), the desk should be moving.
+     * scheduled BCMD is one of the motion commands (UP, DOWN, DECEL),
+     * the desk should be moving.
      * Bui is the simpler way: we can ask bctrl for its current state
      * through a registered callback. Here we approximate by checking
      * whether the last commanded BCMD is a motion BCMD. */

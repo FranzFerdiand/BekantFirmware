@@ -6,6 +6,7 @@
 #include "bctrl.h"
 #include "eeprom_defaults.h"
 #include <stdlib.h> // abs()
+#include <stdbool.h>
 
 /* For syntax-only checks without the real XC8 PIC SFR headers,
  * BEKANT_TEST_SYNTAX pulls in a stub. */
@@ -28,9 +29,14 @@ int16_t cur_pos; // accessed by bui_input() and bui_set_pos()
 
 /* Memory positions are stored in EEPROM via the eeprom_defaults.c
  * helpers (raw register writes) rather than via __eeprom-qualified
- * variables.  This lets the same EEPROM be written from both mainline
- * (bui_init / bui_factory_reset) and from the Timer2 ISR (bui_save_pos
- * called via btn_timer) without tripping XC8 error 1401.
+ * variables, so XC8 does not consider mainline reads (bui_init) and
+ * writes (bui_service) an interrupt/mainline conflict (error 1401).
+ *
+ * EEPROM writes are SLOW (~5 ms per byte) and must not run inside the
+ * Timer2 ISR: a factory-reset writes 16 bytes (~80 ms), which would
+ * block the Timer4 LIN scheduler and trip the watchdog.  Therefore
+ * bui_input() (ISR context) only records a pending request and
+ * bui_service() — called from the main loop — performs the writes.
  *
  * Address map (matches the OEM 4-position layout in
  * oem_reconstruction/docs/FACTORY_RESET.md):
@@ -45,6 +51,11 @@ int16_t cur_pos; // accessed by bui_input() and bui_set_pos()
 
 void bui_save_pos(int16_t save_pos);
 void bui_factory_reset(void);
+
+/* Deferred EEPROM requests, set by bui_input() (ISR) and serviced by
+ * bui_service() (mainline).  -1 / false means "nothing pending". */
+static volatile int16_t pending_save_pos = -1;
+static volatile bool pending_factory_reset = false;
 
 /**
  * Initialize from stored position values.
@@ -78,9 +89,10 @@ void bui_input(INPUT_t input) {
                 bui_state = BUI_MEM_DOWN;
                 bctrl_set_target(BCTRL_DOWN);
             } else if (input == INPUT_SAVE) {
-                bui_save_pos(cur_pos);
+                /* Defer the EEPROM write to bui_service() (mainline). */
+                pending_save_pos = cur_pos;
             } else if (input == INPUT_FACTORY_RESET) {
-                bui_factory_reset();
+                pending_factory_reset = true;
             }
             break;
 
@@ -156,6 +168,26 @@ void bui_set_pos(int16_t pos) {
 }
 
 /**
+ * Service deferred EEPROM requests from the main loop.
+ *
+ * bui_input() runs in Timer2 ISR context and only latches the request;
+ * the actual EEPROM writes happen here so the LIN scheduler (Timer4
+ * ISR) keeps running during the ~5 ms/byte writes.  A factory-reset
+ * supersedes a pending save.
+ */
+void bui_service(void) {
+    if (pending_factory_reset) {
+        pending_factory_reset = false;
+        pending_save_pos = -1;
+        bui_factory_reset();
+    } else if (pending_save_pos >= 0) {
+        int16_t save_pos = pending_save_pos;
+        pending_save_pos = -1;
+        bui_save_pos(save_pos);
+    }
+}
+
+/**
  * Store the given save_pos encoder value into persistent memory.
  * Overwrite stored low_pos or high_pos, whichever is closer to save_pos.
  * 
@@ -190,8 +222,9 @@ void bui_save_pos(int16_t save_pos) {
 /**
  * Factory-reset handler.
  *
- * Fired by btn.c after the user holds both buttons for 10 seconds
- * (the INPUT_FACTORY_RESET event).  Resets the saved memory positions
+ * Requested by btn.c after the user holds both buttons for 10 seconds
+ * (the INPUT_FACTORY_RESET event, latched by bui_input) and executed
+ * from mainline by bui_service().  Resets the saved memory positions
  * to the OEM endstops and writes the OEM 4-position layout to EEPROM.
  *
  * Sequence:

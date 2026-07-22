@@ -218,7 +218,7 @@ void bctrl_populate_cmd() {
     switch (current_state) {
         case BCTRL_AFTER_SCAN:
             cmd_data.encoder = (int16_t)0xfff6;
-            cmd_data.status = BCMD_AFTER_SCAN_INIT;  /* OEM 0x50 */
+            cmd_data.status = BCMD_AFTER_SCAN_INIT;
             break;
 
         case BCTRL_UP_DECEL:
@@ -228,7 +228,7 @@ void bctrl_populate_cmd() {
             }
 
             cmd_data.encoder = decel_target;
-            cmd_data.status = BCMD_DECEL;  /* OEM 0x8e */
+            cmd_data.status = BCMD_DECEL;
             break;
 
         case BCTRL_DOWN_DECEL:
@@ -238,50 +238,52 @@ void bctrl_populate_cmd() {
             }
 
             cmd_data.encoder = decel_target;
-            cmd_data.status = BCMD_DECEL;  /* OEM 0x8e */
+            cmd_data.status = BCMD_DECEL;
             break;
 
         case BCTRL_UP:
             if (error_cond) {
-                // take greater encoder value, use slow speed (OEM 0x8b)
+                // take greater encoder value
                 cmd_data.encoder = encoder_max;
-                cmd_data.status = BCMD_UP_SLOW;
+                cmd_data.status = BCMD_ERR_UP;
             } else {
-                // take lesser encoder value, use fast speed (OEM 0xca)
+                // take lesser encoder value
                 cmd_data.encoder = encoder_min;
-                cmd_data.status = BCMD_UP_FAST;
+                cmd_data.status = BCMD_UP;
             }
             break;
 
         case BCTRL_DOWN:
             if (error_cond) {
-                // encoder zero when OEM_DOWN_SLOW (OEM 0x4c)
+                // encoder zero when in error state
                 cmd_data.encoder = 0;
-                cmd_data.status = BCMD_DOWN_SLOW;
+                cmd_data.status = BCMD_ERR_DOWN;
             } else {
-                // take greater encoder value, use fast speed (OEM 0x0d)
+                // take greater encoder value
                 cmd_data.encoder = encoder_max;
-                cmd_data.status = BCMD_DOWN_FAST;
+                cmd_data.status = BCMD_DOWN;
             }
             break;
 
         case BCTRL_STOP:
             cmd_data.encoder = encoder_max;
-            cmd_data.status = BCMD_STOP_IDLE;  /* OEM 0xfc */
+            cmd_data.status = BCMD_STOP_IDLE;
             break;
         case BCTRL_PRE_MOVE:
             cmd_data.encoder = encoder_max;
-            cmd_data.status = BCMD_PRE_MOVE;  /* OEM 0x49 */
+            cmd_data.status = BCMD_PRE_MOVE;
             break;
         case BCTRL_PRE_STOP:
             cmd_data.encoder = encoder_max;
-            cmd_data.status = BCMD_PRE_STOP;  /* OEM 0xcf */
+            cmd_data.status = BCMD_PRE_STOP;
             break;
         case BCTRL_CLICK:
-            // Single move command just to click the legs (relay brake).
-            // OEM uses DOWN_FAST (0x0d) for this.
+            // Single move command just to click the legs.
+            // One command isn't enough to really move, but it does cause a
+            // click (relay for brakes?)
+            // Either BCMD_UP or BCMD_DOWN status command causes a click
             cmd_data.encoder = encoder_max;
-            cmd_data.status = BCMD_DOWN_FAST;
+            cmd_data.status = BCMD_DOWN;
             break;
     }
 }

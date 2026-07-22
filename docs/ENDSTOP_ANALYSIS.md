@@ -83,55 +83,59 @@ The closest equivalent in `bekant/bctrl.c` is the `bctrl_set_target`
 function and the `bctrl_populate_cmd` function, neither of which
 ever compares the encoder to itself across two samples.
 
-## BCMD constants: ivanwick might be partly wrong
+## BCMD constants: the dispatcher bytes are not the motion commands
 
-The OEM firmware's command bytes (what ivanwick calls `BCMD_*`)
-are recovered from the state-indexed lookup at disassembly
-**0x0d5–0x0ff** (a switch on RAM `0x52`, writing to RAM
-`0x161` — i.e. bank-2 register `0x61`):
+The OEM firmware appears to have *two* layers that emit
+BCMD-like bytes:
 
-|  OEM state (`0x52`)  |  OEM BCMD byte  |  What we believe it does           |
-| --------------------  ---------------  ---------------------------------- |
-|  0, 1 (default)      |  `0x50`         |  Idle / not moving                 |
-|  2                   |  `0x49`         |  Initialize / wake bus             |
-|  3                   |  `0xca`         |  Move up (fast)                    |
-|  4                   |  `0x8b`         |  Move up (slow)                    |
-|  5                   |  `0x4c`         |  Move down (slow)                  |
-|  6                   |  `0x0d`         |  Move down (fast)                  |
-|  7                   |  `0x8e`         |  Decelerate (overshoot)            |
-|  8                   |  `0xcf`         |  Pre-stop / "almost there"         |
-|  —                   |  `0xfc`         |  Universal STOP (endstop handler)  |
+1. The state-indexed lookup at disassembly **0x0d5–0x0ff**
+   (a switch on RAM `0x52`, writing to RAM `0x161` — i.e.
+   bank-2 register `0x61`).  `0x52` is a "bcmd_state" driven
+   by the encoder/endstop-check state machine (`bctrl_state`
+   at RAM `0x4d`), *not* by the buttons directly.
+2. The button handler at **0xa6b–0xa81**, which maps the
+   PORTB button bits directly to *different* bytes written to
+   RAM `0x5b`: RB0 (DOWN) → `0x18`, RB1 (UP) → `0x38`.
 
-> The state mapping in this table is *inferred* from the
-> state-indexed dispatcher at `0x00d5–0x00ff`. The `What we believe
-> it does` column is best-effort guesswork; only the byte values
-> themselves are read directly out of the disassembly.
+Dispatcher table (for completeness — the bytes the
+*encoder-check* layer emits, **not** direct motion commands):
 
-Compare with what ivanwick uses in `bekant/bctrl.c`:
+|  OEM state (`0x52`)  |  OEM BCMD byte  |  What we believe it does                     |
+| --------------------  ---------------  ------------------------------------------- |
+|  0, 1 (default)      |  `0x50`         |  Idle / not moving                           |
+|  2                   |  `0x49`         |  Armed / factory-reset window                |
+|  3                   |  `0xca`         |  Encoder-check layer (ignored as UP command) |
+|  4                   |  `0x8b`         |  Encoder-check layer                         |
+|  5                   |  `0x4c`         |  Encoder-check layer                         |
+|  6                   |  `0x0d`         |  Encoder-check layer (accepted as DOWN)      |
+|  7                   |  `0x8e`         |  Decelerate (overshoot)                      |
+|  8                   |  `0xcf`         |  Pre-stop / "almost there"                   |
+|  —                   |  `0xfc`         |  Universal STOP (endstop handler)            |
 
-|  ivanwick name           |  ivanwick value  |  OEM actual       |  Match?  |
-| ------------------------  ----------------  -----------------  -------- |
-|  `BCMD_STOP_IDLE`        |  `0xfc`          |  `0xfc`           |  ✓       |
-|  `BCMD_AFTER_SCAN_INIT`  |  `0xbf`          |  `0x50`           |  ✗       |
-|  `BCMD_UP`               |  `0x86`          |  `0xca` / `0x8b`  |  ✗       |
-|  `BCMD_DOWN`             |  `0x85`          |  `0x4c` / `0x0d`  |  ✗       |
-|  `BCMD_DECEL`            |  `0x87`          |  `0x8e`           |  ✗       |
-|  `BCMD_PRE_STOP`         |  `0x84`          |  `0xcf`           |  ✗       |
-|  `BCMD_ERR_UP`           |  `0xbc`          |  (none)           |  ✗       |
-|  `BCMD_ERR_DOWN`         |  `0xbd`          |  (none)           |  ✗       |
-|  `BCMD_PRE_MOVE`         |  `0xc4`          |  `0x49`           |  ✗       |
+> The byte values are read directly out of the disassembly;
+> the state meanings are inferred and *may* be wrong.  What is
+> certain from hardware testing: these bytes are not the bytes
+> to send for direct button-driven motion.
 
-**Apparently, only `0xfc` matches.** The other ivanwick BCMD
-values appear to be the ivanwick project's own interpretation
-of the LIN protocol and *may* happen to work in practice because
-the LIN slave (the leg controller) is forgiving about which
-BCMD it receives — perhaps falling back to a sensible default.
+The firmware therefore uses the ivanwick values in
+`bekant/bctrl.h` — hardware-tested on the leg controller:
 
-This *suggests* the ivanwick project might be a "close
-enough" reverse engineering of the LIN protocol, and that
-it works in practice because the leg controller is tolerant.
-But it may not be a faithful reconstruction of the original
-firmware.
+|  name                    |  value  |  Hardware verdict                        |
+| ------------------------  --------  --------------------------------------- |
+|  `BCMD_UP`               |  `0x86` |  ✓ desk moves up while UP is held        |
+|  `BCMD_DOWN`             |  `0x85` |  ✓ desk moves down while DOWN is held    |
+|  `BCMD_STOP_IDLE`        |  `0xfc` |  ✓ (also matches the OEM dispatcher)     |
+|  `BCMD_AFTER_SCAN_INIT`  |  `0xbf` |  (not yet individually verified)         |
+|  `BCMD_PRE_MOVE`         |  `0xc4` |  (not yet individually verified)         |
+|  `BCMD_DECEL`            |  `0x87` |  (not yet individually verified)         |
+|  `BCMD_PRE_STOP`         |  `0x84` |  (not yet individually verified)         |
+|  `BCMD_ERR_UP`           |  `0xbc` |  (not yet individually verified)         |
+|  `BCMD_ERR_DOWN`         |  `0xbd` |  (not yet individually verified)         |
+
+The OEM's own button handler writes `0x38` (UP) / `0x18` (DOWN)
+to RAM `0x5b`; we have not tried those bytes.  If the ivanwick
+values ever misbehave, the OEM button-handler bytes are the
+next candidates to test.
 
 The crucial observation — **if our reading of the dispatcher is
 correct** — is that the only BCMD that must be exact is `0xfc`

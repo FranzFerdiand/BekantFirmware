@@ -155,14 +155,16 @@ not itself verified.)
    `endstop_timer()` once per scheduler slot, before
    `bctrl_report_pos`.
 
-The BCMD values from the recovered `bcmd_table.c` are also
-inlined into `src/bekant/bctrl.h`; the build's BCMD_* constants
-appear to match the OEM (0x50/0x49/0xca/0x8b/0x4c/0x0d/0x8e/0xcf/0xfc)
-rather than the ivanwick project's use of
-(0x86/0x85/0x87/0x84/0xc4/0xbf). In practice the LIN leg
-controller may be forgiving enough that the ivanwick values
-also work; we *assume* the OEM values are the right ones to
-use, but we have not tested either set on hardware.
+The build's BCMD_* constants in `src/bekant/bctrl.h` use the
+ivanwick values (0xbf/0xc4/0x86/0x85/0x87/0x84/0xbc/0xbd/0xfc).
+Hardware testing showed that the dispatcher bytes recovered
+from the OEM disassembly (0x50/0x49/0xca/0x8b/0x4c/0x0d/0x8e/0xcf)
+do not work as direct motion commands: UP with `0xca` was
+ignored until button release, while ivanwick's `0x86`/`0x85`
+move the desk in both directions while the button is held.
+The OEM bytes belong to the encoder/endstop-check layer, not
+the button-driven motion commands (see
+docs/ENDSTOP_ANALYSIS.md).
 
 The endstop fix does not appear to depend on the BCMD values
 being exact — the fix specifically issues the universal `0xfc`

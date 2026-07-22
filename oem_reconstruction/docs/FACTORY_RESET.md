@@ -131,7 +131,7 @@ machine rather than a BCTRL-state-machine dispatcher:
 | -----------------------------------  -------------------------------------------------------------------------------- |
 |  `src/btn/btn.c`                    |  Stacked thresholds: 60 ticks → `INPUT_SAVE`, 200 ticks → `INPUT_FACTORY_RESET`  |
 |  `src/btn/btn.h`                    |  `INPUT_FACTORY_RESET` enum value                                                |
-|  `src/bekant/bui.c`                 |  `bui_input(INPUT_FACTORY_RESET)` → `bui_factory_reset()`                        |
+|  `src/bekant/bui.c`                 |  `bui_input()` latches the gesture; `bui_service()` (main loop) → `bui_factory_reset()`  |
 |  `src/bekant/eeprom_defaults.{c,h}` |  `eeprom_factory_reset()` (writes 4 OEM positions to EEPROM)                     |
 |  `src/bekant/eeprom_defaults.{c,h}` |  `eeprom_load16` / `eeprom_store16` raw-register helpers                         |
 |  `Makefile`                         |  Adds `bekant/eeprom_defaults.c` to `SRCS`                                       |

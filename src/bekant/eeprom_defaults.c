@@ -12,12 +12,14 @@
  * 0x00, 0x02, 0x04, 0x06 — the same layout the OEM firmware uses.
  *
  * The helpers here use raw register access (not __eeprom-qualified
- * variables) so that:
- *   - bui_init() can read EEPROM from mainline, and
- *   - bui_save_pos() / bui_factory_reset() can write EEPROM from
- *     the Timer2 ISR call chain (btn_timer → bui_input → …).
- * XC8 forbids mixing those two contexts against __eeprom variables
- * (error 1401); raw register writes are unrestricted.
+ * variables) so that bui_init() can read EEPROM and bui_service()
+ * can write EEPROM (both from mainline) without tripping XC8
+ * error 1401 about __eeprom access from conflicting contexts.
+ *
+ * Writes run from mainline (never from an ISR — see bui.c): each byte
+ * takes ~5 ms, so the busy-wait feeds the watchdog (CLRWDT) and the
+ * EECON2 unlock sequence is guarded against interrupts per the
+ * datasheet-recommended write procedure.
  */
 
 #include "eeprom_defaults.h"
@@ -25,31 +27,29 @@
 #include <xc.h>
 #include <stdint.h>
 
+static void eeprom_write_byte(uint8_t addr, uint8_t value) {
+    EEADR = addr;
+    EEDATA = value;
+    EECON1bits.EEPGD = 0;     /* access data EEPROM, not program memory */
+    EECON1bits.CFGS  = 0;     /* access EEPROM, not config words */
+    EECON1bits.WREN  = 1;     /* allow writes */
+    INTCONbits.GIE   = 0;     /* unlock sequence must not be interrupted */
+    EECON2 = 0x55;
+    EECON2 = 0xaa;
+    EECON1bits.WR    = 1;     /* start write */
+    INTCONbits.GIE   = 1;
+    while (EECON1bits.WR) {
+        CLRWDT();             /* write takes ~5 ms; keep the WDT happy */
+    }
+    EECON1bits.WREN  = 0;     /* disallow writes (anti-miswrite) */
+}
+
 /* Write a 16-bit value to EEPROM at the given address (low byte at
  * addr, high byte at addr+1, matching what XC8 generates for
  * little-endian __eeprom int16_t variables). */
 static void eeprom_write_word(uint8_t addr, uint16_t value) {
-    EEADR = addr;
-    EEDATA = (uint8_t)(value & 0xff);
-    EECON1bits.EEPGD = 0;     /* access data EEPROM, not program memory */
-    EECON1bits.CFGS  = 0;     /* access EEPROM, not config words */
-    EECON1bits.WREN  = 1;     /* allow writes */
-    EECON2 = 0x55;
-    EECON2 = 0xaa;
-    EECON1bits.WR    = 1;     /* start write */
-    while (EECON1bits.WR) ;   /* wait for hardware completion */
-    EECON1bits.WREN  = 0;     /* disallow writes (anti-miswrite) */
-
-    EEADR = addr + 1;
-    EEDATA = (uint8_t)((value >> 8) & 0xff);
-    EECON1bits.EEPGD = 0;
-    EECON1bits.CFGS  = 0;
-    EECON1bits.WREN  = 1;
-    EECON2 = 0x55;
-    EECON2 = 0xaa;
-    EECON1bits.WR    = 1;
-    while (EECON1bits.WR) ;
-    EECON1bits.WREN  = 0;
+    eeprom_write_byte(addr, (uint8_t)(value & 0xff));
+    eeprom_write_byte(addr + 1, (uint8_t)((value >> 8) & 0xff));
 }
 
 static uint16_t eeprom_read_word(uint8_t addr) {

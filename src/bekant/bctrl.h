@@ -13,19 +13,22 @@ typedef enum {
     BCTRL_CLICK,
 } BCTRL_state_t;
 
-/* OEM BCMD_* values recovered from disassembly 0x0d5–0x0ff.
- * Only BCMD_STOP_IDLE (0xfc) matches ivanwick — the rest are
- * the OEM values, not the ivanwick guesses. */
+/* BCMD values from the ivanwick baseline (git c9b048d) — proven on
+ * hardware: UP and DOWN move the desk while the button is held.
+ * The OEM bytes recovered from the 0x0d5 dispatcher (0xca, 0x0d, …)
+ * turned out to belong to the encoder/endstop-check state machine,
+ * not the direct motion commands — with 0xca the desk ignored UP
+ * until button release. */
 enum {
-    BCMD_AFTER_SCAN_INIT = 0x50,  /* OEM default: state 0/1 → 0x50 */
-    BCMD_STOP_IDLE       = 0xfc,  /* OEM: universal STOP (drops relay) */
-    BCMD_PRE_MOVE        = 0x49,  /* OEM: state 2 → 0x49 */
-    BCMD_UP_FAST         = 0xca,  /* OEM: state 3 → 0xca */
-    BCMD_UP_SLOW         = 0x8b,  /* OEM: state 4 → 0x8b */
-    BCMD_DOWN_SLOW       = 0x4c,  /* OEM: state 5 → 0x4c */
-    BCMD_DOWN_FAST       = 0x0d,  /* OEM: state 6 → 0x0d */
-    BCMD_DECEL           = 0x8e,  /* OEM: state 7 → 0x8e */
-    BCMD_PRE_STOP        = 0xcf,  /* OEM: state 8 → 0xcf */
+    BCMD_AFTER_SCAN_INIT = 0xbf,
+    BCMD_STOP_IDLE       = 0xfc,  /* universal STOP (drops relay); matches OEM */
+    BCMD_PRE_MOVE        = 0xc4,
+    BCMD_UP              = 0x86,
+    BCMD_DOWN            = 0x85,
+    BCMD_DECEL           = 0x87,
+    BCMD_PRE_STOP        = 0x84,
+    BCMD_ERR_DOWN        = 0xbd,
+    BCMD_ERR_UP          = 0xbc,
 };
 
 void bctrl_timer(void);

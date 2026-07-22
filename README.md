@@ -71,16 +71,18 @@ project (the original release), with these additions / fixes:
   positions to the OEM endstops (0x0021 / 0x01d2).
 - **`bekant/eeprom_defaults.{c,h}`** provides raw-register
   EEPROM read/write helpers and `eeprom_factory_reset()`.
-  Raw register access is used (instead of `__eeprom`-qualified
-  variables) so that EEPROM can be safely accessed from both
-  mainline (`bui_init`) and the Timer2 ISR call chain
-  (`btn_timer` → `bui_input` → `bui_save_pos`) without tripping
-  XC8 error 1401.
-- **`bekant/bctrl.{c,h}`** now uses what we believe to be the
-  OEM BCMD values recovered from the disassembly
-  (0xfc/0x50/0x49/0xca/0x8b/0x4c/0x0d/0x8e/0xcf). See
-  [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md) for the
-  BCMD table and the caveats around the state mapping.
+  EEPROM writes run from mainline only: `bui_input()` (Timer2
+  ISR) just latches the request and `bui_service()` — called
+  from the main loop — performs the writes (with `CLRWDT()`
+  in the ~5 ms/byte busy-wait), so the Timer4 LIN scheduler
+  keeps running during save / factory-reset.
+- **`bekant/bctrl.{c,h}`** uses the ivanwick BCMD values
+  (0x86 up / 0x85 down / 0xfc stop / …), which are proven on
+  hardware — the desk moves in both directions while a button
+  is held.  The OEM bytes recovered from the disassembly
+  (0xca/0x0d/…) turned out to belong to the encoder/endstop-check
+  layer, not the direct motion commands.  See
+  [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md).
 - **`bekant/endstop.{c,h}`** is the *proposed* endstop /
   over-travel detector (a *tentative* fix for issue #4); it is
   registered from `user.c::InitApp()` and ticked once per
