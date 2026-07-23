@@ -4,7 +4,7 @@
  *
  * This is a *simplified* reconstruction of the OEM firmware's button
  * handling. The full OEM state machine at 0x05c0 has 8 states and
- * handles a 10-second "press both buttons to factory-reset" sequence
+ * handles an 8-second "press both buttons to factory-reset" sequence
  * (see 0x05d8: if 0x4c == 0x55 the state transitions to 0x02).
  *
  * The simplified state machine here captures the visible gestures
@@ -80,7 +80,7 @@ void btn_timer(void) {
 
     /* The full OEM state machine has 8 states (see disassembly 0x05c0).
      * Here we use the simpler ivanwick-style 6-state machine — the
-     * OEM's two extra states are for the 10-second factory-reset
+     * OEM's two extra states are for the 8-second factory-reset
      * sequence, which is handled at a higher level. */
     switch (s.state) {
         case INPUT_IDLE:

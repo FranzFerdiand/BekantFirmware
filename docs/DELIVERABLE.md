@@ -202,13 +202,13 @@ checks; the real build uses the real XC8 headers from the DFP.
   full 8-state OEM firmware state machine at disassembly
   0x05c0 appears to be much more elaborate than ivanwick's;
   we kept the simplified version because the extra states are
-  for the 10-second factory-reset sequence, which is now
+  for the 8-second factory-reset sequence, which is now
   handled by the buildable firmware instead.
-- **Factory-reset is wired into `btn/btn.c`** as a stacked 3 s/10 s
-  threshold (`btn/btn.c:128-168`). Holding both buttons for 10 s
-  fires `INPUT_SAVE` at 3 s and `INPUT_FACTORY_RESET` at 10 s; the
+- **Factory-reset is wired into `btn/btn.c`** as a stacked 3 s/8 s
+  threshold (`btn/btn.c:128-168`). Holding both buttons for 8 s
+  fires `INPUT_SAVE` at 3 s and `INPUT_FACTORY_RESET` at 8 s; the
   factory-reset overwrites both EEPROM memory slots with the OEM
   endstop values (`0x0021` / `0x01d2`). See
   `oem_reconstruction/docs/FACTORY_RESET.md` for the OEM-style
-  reference and the `Test scenarios` section of `USAGE.md` for the
+  reference and the `Test scenarios` section of `README.md` for the
   user-facing behaviour summary.

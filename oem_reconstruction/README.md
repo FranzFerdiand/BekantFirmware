@@ -27,7 +27,7 @@ implementation. Specifically, what we believe to be present:
 | -------------------------------------------- | ----------------------------- | --------------------------------- |
 | 5-state button SM (combo-press)              | yes                           | yes                               |
 | 6-state OEM BCTRL SM (with endstop)          | appears not                   | **yes**                           |
-| 10-second factory-reset                      | appears not                   | **yes**                           |
+| 8-second factory-reset                       | appears not                   | **yes**                           |
 | Endstop / over-travel detector               | appears not                   | **yes** (`endstop.c`)             |
 | EEPROM defaults write-on-first-boot          | appears not                   | **partial** (`eeprom_defaults.c`) |
 | BCMD lookup table (state → BCMD byte)        | ivanwick's own interpretation | **yes** (`bcmd_table.c`)          |
@@ -80,7 +80,7 @@ oem_reconstruction/
 │   ├── ANALYSIS.md                 ← disassembly comparison
 │   ├── STATE_MACHINE.md            ← full 8-state diagram
 │   ├── ENCODER_TABLE.md            ← what the 0x1046+ retlw table encodes
-│   └── FACTORY_RESET.md            ← the 10-second both-buttons-hold sequence
+│   └── FACTORY_RESET.md            ← the 8-second both-buttons-hold sequence
 └── disassembly/
     ├── orginafirm.hex              ← original Intel HEX
     ├── orginafirm_disasm.asm       ← gpdasm output

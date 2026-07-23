@@ -32,8 +32,8 @@ Additionally:
 - `UP` and `DOWN` both pressed **while in `UP`** → `MEM_UP` (combo-press).
 - `UP` and `DOWN` both pressed **while in `DOWN`** → `MEM_DOWN` (combo-press).
 - Both buttons held: stacked thresholds — 3 s (`SAVE_HOLD_THRESHOLD=60`)
-  → `SAVE`, continues counting toward 10 s; 10 s (`FACTORY_HOLD_THRESHOLD=200`)
-  → `FACTORY_RESET`. Holding past 10 s fires both events on the wire;
+  → `SAVE`, continues counting toward 8 s; 8 s (`FACTORY_HOLD_THRESHOLD=160`)
+  → `FACTORY_RESET`. Holding past 8 s fires both events on the wire;
   the second supersedes the first in EEPROM.
 
 ## Trace A — tap `△` then release, no second tap (regular up movement)
@@ -140,10 +140,10 @@ new value to the closest of the upper/lower EEPROM slots via
 From `SAVE`, the gesture continues counting while both remain
 pressed; releasing returns to `IDLE` (one `INPUT_IDLE` event fires).
 
-## Trace K — both buttons held 10 s (factory-reset)
+## Trace K — both buttons held 8 s (factory-reset)
 
 ```
-gesture :   U+D U+D U+D ... U+D U+D U+D U+D U+D ... (200 ticks)
+gesture :   U+D U+D U+D ... U+D U+D U+D U+D U+D ... (160 ticks)
 state   : IDLE ........ SAVE ........ SAVE FACTORY_RESET IDLE
 events  :                ↑ INPUT_SAVE                      ↑ INPUT_IDLE
                                           ↑ INPUT_FACTORY_RESET

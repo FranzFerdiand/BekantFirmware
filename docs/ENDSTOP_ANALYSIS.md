@@ -37,7 +37,7 @@ The user reports two related symptoms:
 
 1. **Relay stays active** when the desk is at the bottom physical
    endstop.
-2. **No factory-reset** of the saved position via the 10-second
+2. **No factory-reset** of the saved position via the 8-second
    both-buttons-hold gesture the OEM firmware supports. (Note: as
    of this project, **symptom #2 is fixed in `src/`** — see the
    "Bonus: factory-reset support" section below. Symptom #1 is
@@ -73,7 +73,7 @@ detector.
 The same disassembly address also appears to contain a
 **factory-reset sequence** at **0x05d8**: if `0x4c == 0x55` (a
 magic byte), the state transitions to `0x02` and the firmware
-treats the next 10-second hold as a reset. The value `0x55` is
+treats the next 8-second hold as a reset. The value `0x55` is
 presumably loaded into `0x4c` by a different code path that
 counts how long both buttons have been held; the recovery of that
 counter is in `oem_reconstruction/bekant/bui.c::bui_factory_reset()`.
@@ -230,7 +230,7 @@ that the fix actually works on hardware.
 ## Bonus: factory-reset support
 
 While the disassembly was being analyzed, the OEM firmware's
-**10-second both-buttons-hold** factory-reset sequence was also
+**8-second both-buttons-hold** factory-reset sequence was also
 recovered. It lives in the same state machine (disassembly
 **0x05c0–0x068d**), with the magic-byte check at **0x05d8**.
 
@@ -240,10 +240,10 @@ The disassembly-derived reconstructed code in
 reference, but the **buildable firmware in `src/` now implements
 its own version** using a simpler stacked-threshold approach:
 
-- `src/btn/btn.c:128-168` — stacked 3 s/10 s thresholds.
+- `src/btn/btn.c:128-168` — stacked 3 s/8 s thresholds.
   `both_hold_count` increments while both buttons are held; at
   `SAVE_HOLD_THRESHOLD=60` fires `INPUT_SAVE`; continues counting;
-  at `FACTORY_HOLD_THRESHOLD=200` fires `INPUT_FACTORY_RESET`.
+  at `FACTORY_HOLD_THRESHOLD=160` fires `INPUT_FACTORY_RESET`.
 - `src/bekant/bui.c::bui_factory_reset()` — calls
   `eeprom_factory_reset()` (writes 4 OEM values to EEPROM) plus
   an override of the two BUI slots to the endstop values, then
@@ -258,7 +258,7 @@ which is simpler and avoids touching the rest of the BCTRL plane.
 
 See `oem_reconstruction/docs/FACTORY_RESET.md` for the
 disassembly-derived OEM reference and the `Test scenarios`
-section of `USAGE.md` for the user-facing behaviour summary.
+section of `README.md` for the user-facing behaviour summary.
 
 ## Disassembly walkthrough
 

@@ -1,15 +1,22 @@
-# The 10-second both-buttons-hold factory reset
+# The 8-second both-buttons-hold factory reset
 
 The OEM firmware *appears* to support a **factory-reset**
-sequence: holding both buttons for 10 seconds clears the
-saved positions and rewrites the EEPROM defaults. None of
-the following has been verified on hardware — the
-behaviour is inferred from the disassembly.
+sequence: holding both buttons for ~8 seconds (best guess from
+disassembly) clears the saved positions and rewrites the
+EEPROM defaults. None of the following has been verified on
+hardware — the behaviour is inferred from the disassembly.
+
+> The factory-reset hold time was changed from 10 s to 8 s in the
+> buildable firmware (`src/btn/btn.c::FACTORY_HOLD_THRESHOLD = 160`).
+> The disassembly-derived "10 s = 200 ticks" inference in this
+> document is best-effort and was never observed directly; we keep
+> 8 s in our build because it is quicker to use and matches the
+> number we can reproduce reliably from disassembly.
 
 ## The gesture
 
-The user holds both `△` and `▽` buttons for 10 seconds.
-After 10 seconds, the saved positions are reset to the
+The user holds both `△` and `▽` buttons for 8 seconds.
+After 8 seconds, the saved positions are reset to the
 OEM defaults (`0x0021`, `0x00a0`, `0x0120`, `0x01d2`) and
 the controller emits a single "click" of the relay as
 feedback. (We believe this is the behaviour; we have not
@@ -22,7 +29,7 @@ machine at 0x05C0. Specifically:
 
 - The button handler in `btn/btn.c` appears to increment a
   counter `0x42` while both buttons are held.
-- After 10 seconds (200 ticks at 50 ms per tick, the
+- After 8 seconds (160 ticks at 50 ms per tick, the
   exact threshold is what we think we recovered from the
   disassembly at 0x05DD), the button handler appears to
   write the magic byte `0x55` to RAM byte `0x4c` and set
@@ -44,7 +51,7 @@ machine at 0x05C0. Specifically:
 
 ## The button counter (best guess)
 
-The button counter at `0x42` *looks* like the 10-second
+The button counter at `0x42` *looks* like the 8-second
 timer. From the disassembly:
 
 - 0x05DD: `decfsz 0x42, 0x0` — decrement 0x42, skip if zero
@@ -53,8 +60,8 @@ timer. From the disassembly:
 
 So the counter appears to be **decremented** each tick
 (50 ms), and the magic byte is processed when it reaches
-0. The counter is initialised to 200 (10 seconds × 20 Hz
-= 200 ticks) by the button handler — at least, that is our
+0. The counter is initialised to 160 (8 seconds × 20 Hz
+= 160 ticks) by the button handler — at least, that is our
 reading.
 
 ## The EEPROM defaults
@@ -101,12 +108,12 @@ transition from state 1 to state 2 in the 0x05C0
 dispatcher).
 
 The `btn/btn.c` (in this folder) is responsible for
-detecting the 10-second both-buttons-hold gesture and
+detecting the 8-second both-buttons-hold gesture and
 writing the magic byte `0x55` to RAM. The C code does
 this by:
 
 1. Counting ticks while both buttons are held.
-2. When the count reaches 200 (10 seconds), write 0x55
+2. When the count reaches 160 (8 seconds), write 0x55
    to `bctrl_factory_magic` and set the BCTRL state to 1.
 3. The BCTRL state machine then handles the actual reset.
 
@@ -115,7 +122,7 @@ this by:
 The ivanwick-derived state machine in this folder's
 `btn/btn.c` and `bekant/bui.c` are placeholders — they
 recognise the 3-second save gesture but punt the
-10-second factory-reset sequence to a "higher level"
+8-second factory-reset sequence to a "higher level"
 that is not present here.  No file in `oem_reconstruction/`
 is compiled by the project Makefile (which builds only
 `src/`); the files here serve as a disassembler-derived
@@ -129,7 +136,7 @@ machine rather than a BCTRL-state-machine dispatcher:
 
 |  File                               |  Role                                                                            |
 | -----------------------------------  -------------------------------------------------------------------------------- |
-|  `src/btn/btn.c`                    |  Stacked thresholds: 60 ticks → `INPUT_SAVE`, 200 ticks → `INPUT_FACTORY_RESET`  |
+|  `src/btn/btn.c`                    |  Stacked thresholds: 60 ticks → `INPUT_SAVE`, 160 ticks → `INPUT_FACTORY_RESET`  |
 |  `src/btn/btn.h`                    |  `INPUT_FACTORY_RESET` enum value                                                |
 |  `src/bekant/bui.c`                 |  `bui_input()` latches the gesture; `bui_service()` (main loop) → `bui_factory_reset()`  |
 |  `src/bekant/eeprom_defaults.{c,h}` |  `eeprom_factory_reset()` (writes 4 OEM positions to EEPROM)                     |
@@ -150,14 +157,14 @@ Behaviour summary, derived from the state machine
 | -------------------------  ------------------------------  ----------------------------------------- |
 |  0-59 ticks (< 3 s)       |  none                          |  Counter increments but does not fire     |
 |  60 ticks (= 3 s)         |  `INPUT_SAVE`                  |  Save current position to EEPROM          |
-|  61-199 ticks (3-10 s)    |  `INPUT_SAVE` (already fired)  |  Counter continues toward factory         |
-|  200 ticks (= 10 s)       |  `INPUT_FACTORY_RESET`         |  Writes 4 OEM defaults to EEPROM          |
-|  > 200 ticks              |  (no further events)           |  Stays in `INPUT_FACTORY_RESET` state     |
+|  61-159 ticks (3-8 s)     |  `INPUT_SAVE` (already fired)  |  Counter continues toward factory         |
+|  160 ticks (= 8 s)        |  `INPUT_FACTORY_RESET`         |  Writes 4 OEM defaults to EEPROM          |
+|  > 160 ticks              |  (no further events)           |  Stays in `INPUT_FACTORY_RESET` state     |
 |  release                  |  `INPUT_IDLE`                  |  Counter resets for next gesture          |
 
-A user who holds both buttons for the full 10 s will
+A user who holds both buttons for the full 8 s will
 see **two events** — `INPUT_SAVE` at 3 s (a single relay
-click) and `INPUT_FACTORY_RESET` at 10 s (single click
+click) and `INPUT_FACTORY_RESET` at 8 s (single click
 after EEPROM is rewritten to OEM defaults). The second
 event's EEPROM write supersedes the first.
 

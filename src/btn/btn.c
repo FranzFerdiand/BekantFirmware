@@ -79,10 +79,13 @@ typedef struct {
 /* SAVE_HOLD_THRESHOLD: 50 ms × 60 = 3 seconds of both-buttons-held. */
 #define SAVE_HOLD_THRESHOLD  60
 
-/* FACTORY_HOLD_THRESHOLD: 50 ms × 200 = 10 seconds of both-buttons-held.
- * Holding both buttons for 10 seconds transitions the gesture from save
- * (3 s) to factory-reset (10 s).  See ../oem_reconstruction/docs/FACTORY_RESET.md. */
-#define FACTORY_HOLD_THRESHOLD  200
+/* FACTORY_HOLD_THRESHOLD: 50 ms × 160 = 8 seconds of both-buttons-held.
+ * The hold counter keeps running across the SAVE (3 s) transition so
+ * the user only needs to hold the buttons for 8 s straight to reach
+ * the factory-reset (the previous reset of the counter at SAVE made
+ * the wall-clock time-to-factory 13 s, which read as "nothing happens
+ * at 10 s").  See ../oem_reconstruction/docs/FACTORY_RESET.md. */
+#define FACTORY_HOLD_THRESHOLD  160
 
 /* Double-click window: 50 ms × 10 = 500 ms. */
 #define DOUBLE_CLICK_WINDOW  10
@@ -126,29 +129,34 @@ INPUT_t btn_gesture(ButtonState_t btn) {
                     input.state = INPUT_DOWN;
                 }
             } else if (PRESSED(btn.UP) && PRESSED(btn.DOWN)) {
-                /* Both buttons held.  Increment the hold counter and
-                 * check thresholds from highest to lowest, so a tick
-                 * that crosses 200 fires FACTORY (not SAVE). */
+                /* Both buttons held.  The hold counter increments
+                 * without reset at the SAVE (3 s) transition, so the
+                 * user only needs to hold for FACTORY_HOLD_THRESHOLD
+                 * ticks straight (8 s).  Thresholds are checked from
+                 * highest to lowest so a tick that crosses 160 fires
+                 * FACTORY (not SAVE).  The counter is only reset on a
+                 * release or on the FACTORY transition itself. */
                 uint8_t c = ++input.both_hold_count;
                 if (c >= FACTORY_HOLD_THRESHOLD) {
                     input.both_hold_count = 0;
                     input.state = INPUT_FACTORY_RESET;
                 } else if (c >= SAVE_HOLD_THRESHOLD) {
-                    input.both_hold_count = 0;
                     input.state = INPUT_SAVE;
                 } else {
                     input.state = INPUT_IDLE;
                 }
-            } else { // both RELEASED
+            } else { // both RELEASED — reset hold counter for next gesture
+                input.both_hold_count = 0;
                 input.state = INPUT_IDLE;
             }
             break;
 
         case INPUT_SAVE:
-            /* Continue counting in SAVE so a user who keeps holding
-             * past 10 s can escalate to factory-reset.  Holding both
-             * buttons for the full 200 ticks while in SAVE fires
-             * INPUT_FACTORY_RESET on transition. */
+            /* Continue counting in SAVE so the user can escalate to
+             * factory-reset by holding for another 5 s past SAVE.
+             * The counter was NOT reset at the IDLE -> SAVE
+             * transition (see comment above), so each tick here
+             * pushes it toward FACTORY_HOLD_THRESHOLD (160). */
             if (PRESSED(btn.UP) && PRESSED(btn.DOWN)) {
                 if (++input.both_hold_count >= FACTORY_HOLD_THRESHOLD) {
                     input.both_hold_count = 0;
@@ -157,14 +165,19 @@ INPUT_t btn_gesture(ButtonState_t btn) {
                     input.state = INPUT_SAVE;
                 }
             } else {
+                input.both_hold_count = 0;  // release — reset for next gesture
                 input.state = INPUT_IDLE;
             }
             break;
 
         case INPUT_FACTORY_RESET:
             /* Terminal state — stay until the user releases. */
-            input.state = (PRESSED(btn.UP) && PRESSED(btn.DOWN))
-                            ? INPUT_FACTORY_RESET : INPUT_IDLE;
+            if (PRESSED(btn.UP) && PRESSED(btn.DOWN)) {
+                input.state = INPUT_FACTORY_RESET;
+            } else {
+                input.both_hold_count = 0;  // release — reset for next gesture
+                input.state = INPUT_IDLE;
+            }
             break;
 
         case INPUT_UP:

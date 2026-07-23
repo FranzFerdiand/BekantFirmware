@@ -77,7 +77,7 @@ void (*bctrl_report_pos)(int16_t pos);
 
 /* Magic byte that the factory-reset path checks for.
  * Set to 0x55 by the button state machine when both buttons
- * are held for 10 seconds. */
+ * are held for 8 seconds. */
 uint8_t bctrl_factory_magic;
 
 /* 34-entry BCMD dispatch table, lifted from 0x1000-0x1043. */

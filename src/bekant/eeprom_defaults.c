@@ -3,7 +3,7 @@
  * @brief BEKANT controller — EEPROM helpers and factory-reset.
  *
  * The factory-reset path is wired up from the button handler:
- * holding both buttons for 10 seconds fires INPUT_FACTORY_RESET,
+ * holding both buttons for 8 seconds fires INPUT_FACTORY_RESET,
  * which calls bui_factory_reset(), which calls eeprom_factory_reset().
  *
  * The four OEM default positions written here are lifted from

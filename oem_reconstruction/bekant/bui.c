@@ -3,7 +3,7 @@
  * @brief BEKANT controller — recovered upper-level UI.
  *
  * Best-effort reconstruction. The OEM firmware's high-level UI is
- * structurally similar to ivanwick's bui.c but includes the 10-second
+ * structurally similar to ivanwick's bui.c but includes the 8-second
  * factory-reset gesture that the ivanwick project omits.
  *
  * Best-effort reconstruction — see README.md in this folder.

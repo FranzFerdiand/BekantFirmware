@@ -63,10 +63,20 @@ static volatile bool pending_factory_reset = false;
  * Called from mainline (main.c calls InitApp which calls bui_init).
  * EEPROM reads from raw registers are NOT __eeprom-qualified, so
  * XC8 does not consider this an interrupt/mainline conflict.
+ *
+ * A fresh (never-written) chip has both EEPROM words at 0xFFFF, which
+ * signed-casts to (int16_t)-1; we treat that as NULL/zero so the
+ * first save populates both slots per the spec in README.md.
  */
 void bui_init(void) {
     low_pos  = (int16_t)eeprom_load16(EEPROM_ADDR_LOW_POS);
     high_pos = (int16_t)eeprom_load16(EEPROM_ADDR_HIGH_POS);
+
+    if (low_pos < 0 && high_pos < 0) {
+        /* Fresh chip — never written. */
+        low_pos  = 0;
+        high_pos = 0;
+    }
 }
 
 /**
@@ -189,11 +199,30 @@ void bui_service(void) {
 
 /**
  * Store the given save_pos encoder value into persistent memory.
- * Overwrite stored low_pos or high_pos, whichever is closer to save_pos.
- * 
+ *
+ * Slot selection follows the spec in the README:
+ *
+ *   fresh (both slots == 0)
+ *     -> write save_pos to BOTH slots, so either memory button
+ *        moves there.
+ *
+ *   existing, both slots equal (single preset or freshly populated)
+ *     -> smaller-than-preset goes to the LOW slot,
+ *        larger-than-preset goes to the HIGH slot.
+ *
+ *   existing, slots differ
+ *     -> closer-to-the-smaller goes to LOW (incl. when save_pos is
+ *        smaller than both); closer-to-the-bigger goes to HIGH
+ *        (incl. when save_pos is bigger than both).
+ *
+ * In every case the in-memory low_pos / high_pos is updated so the
+ * next MEM_* event targets the newly saved position.  A BCTRL_DECEL_MARGIN
+ * is applied to the stored value so the desk begins braking BCTRL_DECEL_MARGIN
+ * encoder units before the target and stops AT it.
+ *
  * If the given save_pos looks like an encoder error state (negative),
- * then don't save.
- * 
+ * nothing is saved.
+ *
  * @param save_pos new encoder value to store into persistent memory
  */
 void bui_save_pos(int16_t save_pos) {
@@ -202,15 +231,27 @@ void bui_save_pos(int16_t save_pos) {
         return;
     }
 
-    int16_t diff_high = abs(high_pos - save_pos);
-    int16_t diff_low = abs(low_pos - save_pos);
-
-    // Next time during a MEM move, BUI will send the STOP signal to BCTRL
-    // before it reaches the target position, to allow for deceleration.
-    if (diff_low < diff_high) {
+    if (low_pos == 0 && high_pos == 0) {
+        /* Fresh chip — first save populates both slots. */
+        low_pos  = save_pos + BCTRL_DECEL_MARGIN;
+        high_pos = save_pos - BCTRL_DECEL_MARGIN;
+        eeprom_store16(EEPROM_ADDR_LOW_POS,  (uint16_t)low_pos);
+        eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
+    } else if (low_pos == high_pos) {
+        /* Both stored values equal — compare magnitude. */
+        if (save_pos < low_pos) {
+            low_pos = save_pos + BCTRL_DECEL_MARGIN;
+            eeprom_store16(EEPROM_ADDR_LOW_POS, (uint16_t)low_pos);
+        } else {
+            high_pos = save_pos - BCTRL_DECEL_MARGIN;
+            eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
+        }
+    } else if (abs(low_pos - save_pos) < abs(high_pos - save_pos)) {
+        /* Closest to the smaller stored value (includes save < both). */
         low_pos = save_pos + BCTRL_DECEL_MARGIN;
         eeprom_store16(EEPROM_ADDR_LOW_POS, (uint16_t)low_pos);
     } else {
+        /* Closest to the larger stored value (includes save > both). */
         high_pos = save_pos - BCTRL_DECEL_MARGIN;
         eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
     }
@@ -222,7 +263,7 @@ void bui_save_pos(int16_t save_pos) {
 /**
  * Factory-reset handler.
  *
- * Requested by btn.c after the user holds both buttons for 10 seconds
+ * Requested by btn.c after the user holds both buttons for 8 seconds
  * (the INPUT_FACTORY_RESET event, latched by bui_input) and executed
  * from mainline by bui_service().  Resets the saved memory positions
  * to the OEM endstops and writes the OEM 4-position layout to EEPROM.

@@ -81,7 +81,7 @@ state==0 appears to fall through to the default handler at
 ### State 1 — factory-reset trigger
 
 We believe the button handler increments a counter while both
-buttons are held. After 10 seconds, the counter overflows and
+buttons are held. After 8 seconds, the counter overflows and
 the handler *appears* to write the magic byte `0x55` to RAM
 byte `0x4c` and set the BCTRL state to 1.
 
@@ -180,7 +180,7 @@ xor chain. They seem to fall through to the default handler at
 
 | From state | To state | What we think triggers it     |
 | ---------- | -------- | ----------------------------- |
-| 0          | 1        | 10 s both-buttons hold        |
+| 0          | 1        | 8 s both-buttons hold         |
 | 0          | 3        | User starts moving (UP/DOWN)  |
 | 1          | 2        | Magic byte 0x55 seen          |
 | 1          | 0        | No magic (timeout or release) |
@@ -202,7 +202,7 @@ The OEM state machine appears to have 6 effective states
 (0, 1, 2, 3, 4, 6) plus default. The major differences are:
 
 1. **State 1 → 2 factory-reset path** — ivanwick appears not
-   to implement the 10-second both-buttons-hold factory
+   to implement the 8-second both-buttons-hold factory
    reset.
 2. **State 3 → 4 → 6 endstop detection** — ivanwick appears
    not to implement the endstop detector. This may be the

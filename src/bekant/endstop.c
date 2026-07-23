@@ -35,6 +35,15 @@
  * changing.
  *
  * Best-effort reconstruction — see README.md in this folder.
+ *
+ * ----------------------------------------------------------------------
+ * Open issue (2026-07): intermittent "only one leg moves" after a
+ * reset.  Could not reproduce.  A false-positive endstop trigger on a
+ * single leg (e.g. one leg's encoder lagging past ENDSTOP_STUCK_TICKS
+ * while the other is still advancing) is one possible cause — see
+ * the ENDSTOP_STUCK_TICKS threshold below.  Parked; investigate on
+ * next reproducible occurrence.
+ * ----------------------------------------------------------------------
  */
 
 #include <xc.h>

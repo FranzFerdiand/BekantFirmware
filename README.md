@@ -20,7 +20,7 @@ case of the controller box.
 | hold `△`            | move the desk up                       |
 | hold `▽`            | move the desk down                     |
 | hold `▽+△` for 3s   | save position (auto-selected)          |
-| hold `▽+△` for 10s  | factory reset (keep pressed after 3s!) |
+| hold `▽+△` for 8s   | factory reset (keep pressed after 3s!) |
 | press `△△` or `△+▽` | move to upper (standing) position      |
 | press `▽▽` or `▽+△` | move to lower (sitting) position       |
 
@@ -48,11 +48,11 @@ This project:
 1. **Supports both gesture styles at the same time.** You can use ivanwick's
    "combo-press" (hold one button, tap the other) or DieSteinhose's "double-
    tap". The unified state machine in `btn/btn.c` handles both.
-2. **Implements a 10-second factory-reset** by holding both buttons. Distinct
+2. **Implements an 8-second factory-reset** by holding both buttons. Distinct
    from the existing 3-second save gesture (which saves the current position)
-   the 10-second hold writes the OEM endstop defaults to EEPROM. The two
+   the 8-second hold writes the OEM endstop defaults to EEPROM. The two
    gestures share one counter using a *stacked-threshold* state machine, so
-   a 10-second hold fires both events (SAVE at 3 s, FACTORY_RESET at 10 s).
+   an 8-second hold fires both events (SAVE at 3 s, FACTORY_RESET at 8 s).
 3. **Includes a best-effort C reconstruction** of the original IKEA firmware
    in `oem_reconstruction/`, for future reference and as a *tentative* attempt
    at the endstop behaviour described in
@@ -62,7 +62,7 @@ The rest of the source is mostly identical to ivanwick's original project,
 with these additions / fixes:
 
 - **`btn/`** rewritten to support both gesture styles at the
-  same time, plus the stacked 3 s/10 s thresholds for save /
+  same time, plus the stacked 3 s/8 s thresholds for save /
   factory-reset.
 - **`bekant/bui.c`** now responds to `INPUT_FACTORY_RESET` by
   calling `bui_factory_reset()` which resets the saved memory
@@ -93,10 +93,9 @@ with these additions / fixes:
 
 Some glitches still remain, mainly:
 
-- resetting does not work as expected yet
-- storing the upper/lower position should be more intuitive
-- at one point motors got out of sync (I had to erase + re-program, but was
-  not able to reproduce the case and it happened only once)
+- at one point only one leg was moving (I had to erase + re-program, but was
+  not able to reproduce the case and it happened only once, possibly after a
+  reset). Keep an eye on it.
 
 ### Project layout
 
@@ -126,7 +125,7 @@ BekantFirmware/
     ├── interrupts.c                     ← void __interrupt() isr(void) (the ISR fix)
     ├── Makefile
     ├── btn/btn.h                        ← INPUT_t enum, gesture documentation
-    ├── btn/btn.c                        ← unified state machine; stacked 3 s/10 s thresholds
+    ├── btn/btn.c                        ← unified state machine; stacked 3 s/8 s thresholds
     ├── lin/lin_d.c / lin_d.h            ← LIN driver
     ├── bekant/bscan.c / bscan.h         ← startup bus scan
     ├── bekant/bctrl.c / bctrl.h         ← LIN control plane (now uses OEM BCMD values)
@@ -391,9 +390,9 @@ for 3 s to save:
 - Move the desk to the desired standing height, then press and
   hold both buttons for 3 seconds.
 
-**Factory reset** — hold both buttons for the full 10 seconds.
+**Factory reset** — hold both buttons for the full 8 seconds.
 The save gesture fires at 3 s, then the factory-reset fires at
-10 s and overwrites both memory slots with the OEM endstop values
+8 s and overwrites both memory slots with the OEM endstop values
 (0x0021 / 0x01d2).
 
 ### 8. Close the controller and test
@@ -436,36 +435,57 @@ in `src/btn/btn.c` is designed to handle. Tick rate is 50 ms
 |  Hold duration            |  State transitions                                         |  Events fired                                       |  Final EEPROM (low, high)       |
 | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------------- |
 |  release at 50 ticks      |  IDLE (count 1-49) → IDLE                                  |  (none)                                             |  unchanged                      |
-|  release at 60 ticks      |  IDLE (1-59) → IDLE → SAVE (60th tick) → IDLE              |  `INPUT_SAVE`                                       |  current position               |
-|  release at 100 ticks     |  IDLE (1-59) → IDLE → SAVE → SAVE → IDLE                   |  `INPUT_SAVE`                                       |  current position               |
-|  release at 199 ticks     |  IDLE → SAVE → SAVE → IDLE                                 |  `INPUT_SAVE`                                       |  current position               |
-|  release at 200 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (200) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults (0x0021, 0x01d2)  |
+|  release at 60 ticks      |  IDLE (1-59) → IDLE → SAVE (60th tick) → IDLE              |  `INPUT_SAVE`                                       |  per the save rules below        |
+|  release at 100 ticks     |  IDLE (1-59) → IDLE → SAVE → SAVE → IDLE                   |  `INPUT_SAVE`                                       |  per the save rules below        |
+|  release at 159 ticks     |  IDLE → SAVE (60) → SAVE → IDLE                            |  `INPUT_SAVE`                                       |  per the save rules below        |
+|  release at 160 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (160) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults (0x0021, 0x01d2)  |
 |  release at 250 ticks     |  IDLE → SAVE → FACTORY_RESET → IDLE                        |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults                   |
 |  release immediately      |  IDLE                                                      |  (none)                                             |  unchanged                      |
-|  release twice quickly    |  press-release-press-release with total held ticks < 60    |  (none — counter accumulates but never crosses 60)  |  unchanged                      |
+|  release twice quickly    |  press-release-press-release with total held ticks < 60    |  (none — counter resets to 0 on release)            |  unchanged                      |
 
 Notes on the table:
 
 - **`INPUT_SAVE` (3 s mark):** The desk's relay clicks once. The
-  position closest to the current height (upper or lower memory slot)
-  is overwritten with the current encoder value.
-- **`INPUT_FACTORY_RESET` (10 s mark):** The desk's relay clicks a
+  current encoder position is written into one of the two EEPROM
+  slots per the rules below.
+- **`INPUT_FACTORY_RESET` (8 s mark):** The desk's relay clicks a
   second time. The four OEM default positions are written to EEPROM:
   `0x0021` (low), `0x00a0`, `0x0120`, and `0x01d2` (high). The BUI
   then overwrites the two BUI slots at `0x00` and `0x02` with the
   endstop values, so MEM_UP / MEM_DOWN go to the physical limits.
-- **Why two events on a 10-s hold:** The state machine uses
+- **Why two events on an 8-s hold:** The state machine uses
   **stacked thresholds** rather than "either/or" — the SAVE event
   fires at the 60-tick mark and the FACTORY_RESET event fires at
-  the 200-tick mark. This gives the user two distinct audible
-  confirmation clicks (3 s then 10 s) which match what the original
-  IKEA firmware appears to do (`oem_reconstruction/docs/FACTORY_RESET.md:14-15`).
-- **Counter persistence on release:** if the user holds to, say, 50
-  ticks, releases, then re-presses, the counter resumes from 50 (it
-  is not zeroed on release). This is pre-existing ivanwick
-  behaviour that we did not change.
-- **A full 10-s hold is two events but the final state is the OEM
+  the 160-tick mark. This gives the user two distinct audible
+  confirmation clicks (3 s then 8 s) which matches the original
+  IKEA firmware's behaviour
+  (`oem_reconstruction/docs/FACTORY_RESET.md:14-15`).
+- **Counter reset on release:** if the user holds, releases, then
+  re-presses, the hold counter is reset to 0 on each release so the
+  next gesture starts fresh. (Earlier versions carried the count
+  across releases, which could fire a spurious save or
+  factory-reset immediately on a brief re-press.)
+- **A full 8-s hold is two events but the final state is the OEM
   defaults**, since `INPUT_FACTORY_RESET` writes after `INPUT_SAVE`.
+
+### Save rules (which slot gets the new value)
+
+`bui_save_pos()` in `src/bekant/bui.c` decides which EEPROM slot to
+overwrite using four cases. The "smaller" / "bigger" / "closer-to"
+comparisons are all on the `encoder` value of the current height
+vs. the values already stored as `low_pos` and `high_pos`.
+
+|  Existing state                       |  Current value vs. stored                  |  Slot written  |
+| ------------------------------------- | ----------------------------------------- | -------------- |
+|  fresh chip (both slots = 0)          |  any                                      |  **both** slots (the new value ± decel margin). Either memory button now moves there. |
+|  both slots equal (`low == high`)     |  current value **smaller than** stored     |  low slot      |
+|  both slots equal                     |  current value **larger than** stored      |  high slot     |
+|  slots different (`low != high`)      |  current value **closer to the smaller** of the two stored values (incl. when smaller than both) | low slot |
+|  slots different                      |  current value **closer to the bigger** of the two stored values (incl. when larger than both)  | high slot |
+
+A "fresh chip" is one whose EEPROM is unprogrammed (both slots
+read back as `0xFFFF`, signed-cast to `(int16_t)-1`); `bui_init()`
+turns that into `(low=0, high=0)` so the table above fires.
 
 The detailed state-machine transitions are documented in
 `docs/TRACE.md` and the disassembly-derived OEM reference is in

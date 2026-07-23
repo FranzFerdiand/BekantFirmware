@@ -29,7 +29,7 @@
  *   0x1FFF:  retlw 0x00        ; return 0
  *
  * The factory-reset sequence is at 0x05D8 (state 1 handler):
- * if RAM byte 0x4c is 0x55 (set by the 10-second both-buttons
+ * if RAM byte 0x4c is 0x55 (set by the 8-second both-buttons
  * hold counter), the state transitions to 0x02 and on the next
  * tick the EEPROM defaults are rewritten.
  *
@@ -53,7 +53,7 @@
 
 /**
  * The factory-reset magic byte: when RAM 0x4c is set to 0x55 by
- * the 10-second both-buttons-hold counter, the state machine at
+ * the 8-second both-buttons-hold counter, the state machine at
  * 0x05D8 transitions to state 0x02 and re-initialises the
  * EEPROM defaults.
  */
@@ -152,7 +152,7 @@ void eeprom_init_if_empty(void) {
  * Get the factory-reset magic byte that the state machine checks
  * for at 0x05D8. The button-handler code in btn.c is responsible
  * for writing this byte to RAM 0x4c when both buttons are held
- * for 10 seconds.
+ * for 8 seconds.
  */
 uint8_t factory_reset_magic(void) {
     return FACTORY_RESET_MAGIC;
