@@ -50,9 +50,11 @@ This project:
    tap". The unified state machine in `btn/btn.c` handles both.
 2. **Implements an 8-second factory-reset** by holding both buttons. Distinct
    from the existing 3-second save gesture (which saves the current position)
-   the 8-second hold writes the OEM endstop defaults to EEPROM. The two
-   gestures share one counter using a *stacked-threshold* state machine, so
-   an 8-second hold fires both events (SAVE at 3 s, FACTORY_RESET at 8 s).
+   the 8-second hold clears the saved memory positions so the next 3-second
+   save behaves like a first save on a fresh chip (populates both slots).
+   The two gestures share one counter using a *stacked-threshold* state
+   machine, so an 8-second hold fires both events (SAVE at 3 s,
+   FACTORY_RESET at 8 s).
 3. **Includes a best-effort C reconstruction** of the original IKEA firmware
    in `oem_reconstruction/`, for future reference and as a *tentative* attempt
    at the endstop behaviour described in
@@ -65,8 +67,10 @@ with these additions / fixes:
   same time, plus the stacked 3 s/8 s thresholds for save /
   factory-reset.
 - **`bekant/bui.c`** now responds to `INPUT_FACTORY_RESET` by
-  calling `bui_factory_reset()` which resets the saved memory
-  positions to the OEM endstops (0x0021 / 0x01d2).
+  calling `bui_factory_reset()` which clears the saved memory
+  positions to fresh-chip state (in-memory `(0, 0)` plus `0xFFFF`
+  in all four EEPROM slots) so the next 3-second save populates
+  both slots.
 - **`bekant/eeprom_defaults.{c,h}`** provides raw-register
   EEPROM read/write helpers and `eeprom_factory_reset()`.
   EEPROM writes run from mainline only: `bui_input()` (Timer2
@@ -392,8 +396,9 @@ for 3 s to save:
 
 **Factory reset** — hold both buttons for the full 8 seconds.
 The save gesture fires at 3 s, then the factory-reset fires at
-8 s and overwrites both memory slots with the OEM endstop values
-(0x0021 / 0x01d2).
+8 s and clears both memory slots to the fresh-chip state. The
+very next 3-second both-buttons-hold will then populate both slots
+with the same target (first-save rules apply).
 
 ### 8. Close the controller and test
 
@@ -438,8 +443,8 @@ in `src/btn/btn.c` is designed to handle. Tick rate is 50 ms
 |  release at 60 ticks      |  IDLE (1-59) → IDLE → SAVE (60th tick) → IDLE              |  `INPUT_SAVE`                                       |  per the save rules below        |
 |  release at 100 ticks     |  IDLE (1-59) → IDLE → SAVE → SAVE → IDLE                   |  `INPUT_SAVE`                                       |  per the save rules below        |
 |  release at 159 ticks     |  IDLE → SAVE (60) → SAVE → IDLE                            |  `INPUT_SAVE`                                       |  per the save rules below        |
-|  release at 160 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (160) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults (0x0021, 0x01d2)  |
-|  release at 250 ticks     |  IDLE → SAVE → FACTORY_RESET → IDLE                        |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults                   |
+|  release at 160 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (160) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  cleared to 0xFFFF / (0, 0)    |
+|  release at 250 ticks     |  IDLE → SAVE → FACTORY_RESET → IDLE                        |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  cleared to 0xFFFF / (0, 0)    |
 |  release immediately      |  IDLE                                                      |  (none)                                             |  unchanged                      |
 |  release twice quickly    |  press-release-press-release with total held ticks < 60    |  (none — counter resets to 0 on release)            |  unchanged                      |
 
@@ -449,24 +454,27 @@ Notes on the table:
   current encoder position is written into one of the two EEPROM
   slots per the rules below.
 - **`INPUT_FACTORY_RESET` (8 s mark):** The desk's relay clicks a
-  second time. The four OEM default positions are written to EEPROM:
-  `0x0021` (low), `0x00a0`, `0x0120`, and `0x01d2` (high). The BUI
-  then overwrites the two BUI slots at `0x00` and `0x02` with the
-  endstop values, so MEM_UP / MEM_DOWN go to the physical limits.
+  second time. All four EEPROM position slots are written with
+  `0xFFFF` and the in-memory `low_pos` / `high_pos` are forced to
+  `(0, 0)`, so the next 3-second both-buttons-hold behaves like a
+  fresh-chip first save (populates both slots per the save-rules
+  table below).
 - **Why two events on an 8-s hold:** The state machine uses
   **stacked thresholds** rather than "either/or" — the SAVE event
   fires at the 60-tick mark and the FACTORY_RESET event fires at
   the 160-tick mark. This gives the user two distinct audible
-  confirmation clicks (3 s then 8 s) which matches the original
-  IKEA firmware's behaviour
-  (`oem_reconstruction/docs/FACTORY_RESET.md:14-15`).
+  confirmation clicks (3 s then 8 s) and matches the spirit of the
+  original IKEA firmware's behaviour
+  (`oem_reconstruction/docs/FACTORY_RESET.md`).
 - **Counter reset on release:** if the user holds, releases, then
   re-presses, the hold counter is reset to 0 on each release so the
   next gesture starts fresh. (Earlier versions carried the count
   across releases, which could fire a spurious save or
   factory-reset immediately on a brief re-press.)
-- **A full 8-s hold is two events but the final state is the OEM
-  defaults**, since `INPUT_FACTORY_RESET` writes after `INPUT_SAVE`.
+- **A full 8-s hold is two events; the final state is the
+  fresh-chip state** (`(0, 0)` in memory, `0xFFFF` in EEPROM), since
+  `INPUT_FACTORY_RESET` fires after `INPUT_SAVE` and overwrites the
+  saved value at the second click.
 
 ### Save rules (which slot gets the new value)
 

@@ -2,37 +2,27 @@
  * @file eeprom_defaults.h
  * @brief BEKANT controller — EEPROM helpers and factory-reset.
  *
- * The OEM firmware writes four 16-bit default positions to EEPROM
- * during the factory-reset gesture.  This module exposes:
+ * The factory-reset gesture clears the saved memory positions by
+ * writing 0xFFFF (the unprogrammed-chip value) to all four EEPROM
+ * position slots.  On the next boot `bui_init()` reads these as
+ * `(0, 0)` in memory (per the "fresh chip" rule in
+ * `src/bekant/bui.c::bui_init`), so the next `INPUT_SAVE` populates
+ * both slots per the fresh-chip save rule.
  *
- *   eeprom_factory_reset()    — overwrite the four OEM defaults
+ *   eeprom_factory_reset()    — write 0xFFFF to the 4 position slots
  *   eeprom_load16(addr)       — read a 16-bit value
  *   eeprom_store16(addr, val) — write a 16-bit value
  *
- * The OEM firmware layout (per oem_reconstruction/docs/FACTORY_RESET.md):
- *   EEPROM[0x00] = 0x0021 (physical bottom endstop)
- *   EEPROM[0x02] = 0x00a0 (low memory position)
- *   EEPROM[0x04] = 0x0120 (high memory position)
- *   EEPROM[0x06] = 0x01d2 (physical top endstop)
- *
- * Note that this BUI project's `__eeprom saved` struct also writes
- * to EEPROM[0x00] and EEPROM[0x02].  After factory-reset, the BUI
- * layer overrides those two slots with the OEM endstop values so that
- * MEM_UP/MEM_DOWN move to the physical limits of the desk rather
- * than to the OEM intermediate "memory" positions.
+ * The OEM firmware (per oem_reconstruction/docs/FACTORY_RESET.md)
+ * wrote 0x0021 / 0x00a0 / 0x0120 / 0x01d2 to the same four slots;
+ * our buildable firmware uses a simpler "reset to fresh" model.
  */
 #ifndef EEPROM_DEFAULTS_H
 #define EEPROM_DEFAULTS_H
 
 #include <stdint.h>
 
-/** OEM default position values, from FACTORY_RESET.md §"The EEPROM defaults". */
-#define OEM_BOTTOM_ENDSTOP   0x0021u
-#define OEM_LOW_MEMORY       0x00a0u
-#define OEM_HIGH_MEMORY      0x0120u
-#define OEM_TOP_ENDSTOP      0x01d2u
-
-/** Write the four OEM default positions to EEPROM (endstops + memory). */
+/** Write 0xFFFF (unprogrammed) to all 4 EEPROM position slots. */
 void eeprom_factory_reset(void);
 
 /** Read a 16-bit value from EEPROM. */

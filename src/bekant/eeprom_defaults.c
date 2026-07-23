@@ -65,10 +65,15 @@ static uint16_t eeprom_read_word(uint8_t addr) {
 }
 
 void eeprom_factory_reset(void) {
-    eeprom_write_word(0x00, OEM_BOTTOM_ENDSTOP);
-    eeprom_write_word(0x02, OEM_LOW_MEMORY);
-    eeprom_write_word(0x04, OEM_HIGH_MEMORY);
-    eeprom_write_word(0x06, OEM_TOP_ENDSTOP);
+    /* Clear all 4 EEPROM position slots to 0xFFFF (the unprogrammed
+     * value), so a freshly-reset chip looks identical to a newly-
+     * erased chip.  bui_init() maps 0xFFFF reads to (0, 0) in memory,
+     * so the next INPUT_SAVE populates both slots per the fresh-chip
+     * rule in src/bekant/bui.c::bui_save_pos. */
+    eeprom_write_word(0x00, 0xFFFF);
+    eeprom_write_word(0x02, 0xFFFF);
+    eeprom_write_word(0x04, 0xFFFF);
+    eeprom_write_word(0x06, 0xFFFF);
 }
 
 uint16_t eeprom_load16(uint8_t addr) {

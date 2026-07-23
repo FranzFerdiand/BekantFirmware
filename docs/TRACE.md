@@ -163,18 +163,17 @@ Tick-by-tick:
 `bui_factory_reset()` (called from `BUI_STOP → INPUT_FACTORY_RESET`)
 performs:
 
-1. `eeprom_factory_reset()` writes the four OEM values
-   (`0x0021`, `0x00a0`, `0x0120`, `0x01d2`) to EEPROM offsets
-   `0x00..0x07`.
-2. Override the BUI's two slots (`EEPROM_ADDR_LOW_POS=0x00`,
-   `EEPROM_ADDR_HIGH_POS=0x02`) with the endstop values so
-   `MEM_UP` / `MEM_DOWN` move to the physical limits.
-3. Re-read `low_pos` / `high_pos` from EEPROM.
-4. `bctrl_set_target(BCTRL_CLICK)` for the second audible click.
+1. `eeprom_factory_reset()` writes `0xFFFF` (unprogrammed) to all
+   four EEPROM position slots (offsets `0x00..0x07`).
+2. Force `low_pos = 0` and `high_pos = 0` in memory so the next
+   `INPUT_SAVE` populates both slots per the fresh-chip rule in
+   `bui_save_pos`.
+3. `bctrl_set_target(BCTRL_CLICK)` for the second audible click.
 
-The user hears **two clicks** at the 3-s and 10-s marks. The
-final EEPROM state is the OEM defaults (the second write
-overwrites the first).
+The user hears **two clicks** at the 3-s and 8-s marks. The final
+EEPROM state is `0xFFFF`/`0xFFFF`/`0xFFFF`/`0xFFFF` and the
+in-memory state is `(0, 0)`, so the next 3-second save behaves
+like a fresh-chip first save (populates both slots).
 
 ### Counter persistence on brief releases
 

@@ -33,18 +33,23 @@ int16_t cur_pos; // accessed by bui_input() and bui_set_pos()
  * writes (bui_service) an interrupt/mainline conflict (error 1401).
  *
  * EEPROM writes are SLOW (~5 ms per byte) and must not run inside the
- * Timer2 ISR: a factory-reset writes 16 bytes (~80 ms), which would
+ * Timer2 ISR: a factory-reset writes 8 bytes (~40 ms), which would
  * block the Timer4 LIN scheduler and trip the watchdog.  Therefore
  * bui_input() (ISR context) only records a pending request and
  * bui_service() — called from the main loop — performs the writes.
  *
- * Address map (matches the OEM 4-position layout in
- * oem_reconstruction/docs/FACTORY_RESET.md):
- *   EEPROM[0x00..0x01] = low_pos  (also OEM_BOTTOM_ENDSTOP slot)
- *   EEPROM[0x02..0x03] = high_pos (overridden OEM_LOW_MEMORY slot;
- *                                    BUI wants the top endstop here)
- *   EEPROM[0x04..0x05] = OEM_HIGH_MEMORY (not used by BUI directly)
- *   EEPROM[0x06..0x07] = OEM_TOP_ENDSTOP (not used by BUI directly)
+ * Address map (matches the OEM firmware's 4-position layout in
+ * oem_reconstruction/docs/FACTORY_RESET.md, even though our buildable
+ * firmware only uses the first two slots):
+ *   EEPROM[0x00..0x01] = low_pos  (OEM "bottom endstop" slot)
+ *   EEPROM[0x02..0x03] = high_pos (OEM "low memory" slot)
+ *   EEPROM[0x04..0x05] = (OEM "high memory"; not used by BUI)
+ *   EEPROM[0x06..0x07] = (OEM "top endstop"; not used by BUI)
+ *
+ * On factory-reset, all four slots are written with 0xFFFF so the
+ * firmware starts from a fresh-chip state on the next boot, and the
+ * in-memory low_pos / high_pos are forced to (0, 0) immediately so
+ * the next INPUT_SAVE populates both slots per the fresh-chip rule.
  */
 #define EEPROM_ADDR_LOW_POS  0x00u
 #define EEPROM_ADDR_HIGH_POS 0x02u
@@ -265,32 +270,24 @@ void bui_save_pos(int16_t save_pos) {
  *
  * Requested by btn.c after the user holds both buttons for 8 seconds
  * (the INPUT_FACTORY_RESET event, latched by bui_input) and executed
- * from mainline by bui_service().  Resets the saved memory positions
- * to the OEM endstops and writes the OEM 4-position layout to EEPROM.
+ * from mainline by bui_service().  Clears all four EEPROM position
+ * slots to 0xFFFF and forces the in-memory low_pos / high_pos to
+ * (0, 0), so the next INPUT_SAVE populates both slots per the
+ * fresh-chip save rule in `bui_save_pos`.
  *
  * Sequence:
- *   1. eeprom_factory_reset() — writes 4 OEM defaults to EEPROM[0x00..0x07].
- *      This populates the two intermediate OEM memory positions
- *      (0x00a0, 0x0120) at slots 0x02 and 0x04 which the BUI layer
- *      does not use directly.
- *   2. Override the two BUI slots at 0x00 and 0x02 with the OEM endstops,
- *      so MEM_UP / MEM_DOWN move to the physical limits of the desk.
- *   3. Update in-memory low_pos / high_pos.
- *   4. Single relay click as audible feedback (same as bui_save_pos).
+ *   1. eeprom_factory_reset() — writes 0xFFFF to EEPROM[0x00..0x07].
+ *   2. Update in-memory low_pos / high_pos to (0, 0).
+ *   3. Single relay click as audible feedback (same as bui_save_pos).
  *
- * See oem_reconstruction/docs/FACTORY_RESET.md for OEM behaviour.
+ * See oem_reconstruction/docs/FACTORY_RESET.md for the OEM firmware's
+ * own factory-reset behaviour (it wrote OEM endstop values instead).
  */
 void bui_factory_reset(void) {
     eeprom_factory_reset();
 
-    /* Override the BUI's high_pos slot with the OEM top-endstop value
-     * (eeprom_factory_reset wrote OEM_LOW_MEMORY=0x00a0 there, which
-     * the BUI doesn't want — MEM_UP should go all the way up). */
-    eeprom_store16(EEPROM_ADDR_LOW_POS,  OEM_BOTTOM_ENDSTOP);
-    eeprom_store16(EEPROM_ADDR_HIGH_POS, OEM_TOP_ENDSTOP);
-
-    low_pos  = (int16_t)eeprom_load16(EEPROM_ADDR_LOW_POS);
-    high_pos = (int16_t)eeprom_load16(EEPROM_ADDR_HIGH_POS);
+    low_pos  = 0;
+    high_pos = 0;
 
     bctrl_set_target(BCTRL_CLICK);
 }

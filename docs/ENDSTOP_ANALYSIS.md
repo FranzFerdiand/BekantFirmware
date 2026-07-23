@@ -245,11 +245,14 @@ its own version** using a simpler stacked-threshold approach:
   `SAVE_HOLD_THRESHOLD=60` fires `INPUT_SAVE`; continues counting;
   at `FACTORY_HOLD_THRESHOLD=160` fires `INPUT_FACTORY_RESET`.
 - `src/bekant/bui.c::bui_factory_reset()` — calls
-  `eeprom_factory_reset()` (writes 4 OEM values to EEPROM) plus
-  an override of the two BUI slots to the endstop values, then
-  `bctrl_set_target(BCTRL_CLICK)` for the second audible click.
+  `eeprom_factory_reset()` (writes `0xFFFF` to all 4 EEPROM
+  position slots) and forces the in-memory `low_pos` /
+  `high_pos` to `(0, 0)`, then `bctrl_set_target(BCTRL_CLICK)`
+  for the second audible click. This puts the firmware back
+  into a fresh-chip state so the next `INPUT_SAVE` populates
+  both slots per the save rules in the README.
 - `src/bekant/eeprom_defaults.{c,h}` — raw-register EEPROM
-  read/write helpers and the canonical 4-position OEM write.
+  read/write helpers and the four-slot `0xFFFF`-fill factory-reset.
 
 The OEM-style BCTRL state-machine path (`bctrl_factory_magic` in
 `oem_reconstruction/bekant/bctrl.c`) is **not** integrated — the

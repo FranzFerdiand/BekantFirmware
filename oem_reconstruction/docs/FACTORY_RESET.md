@@ -12,6 +12,15 @@ hardware — the behaviour is inferred from the disassembly.
 > document is best-effort and was never observed directly; we keep
 > 8 s in our build because it is quicker to use and matches the
 > number we can reproduce reliably from disassembly.
+>
+> The buildable firmware in `src/` also diverges from the OEM in
+> *what the reset writes*: this document describes the OEM behaviour
+> of writing the four OEM default positions to EEPROM
+> (`0x0021`, `0x00a0`, `0x0120`, `0x01d2`); the buildable firmware
+> instead writes `0xFFFF` to all four slots and forces the in-memory
+> `low_pos` / `high_pos` to `(0, 0)`, so the next 3-second save
+> behaves like a fresh-chip first save (populates both slots). See
+> `README.md` §"Save rules" for the user-facing description.
 
 ## The gesture
 

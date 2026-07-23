@@ -207,8 +207,9 @@ checks; the real build uses the real XC8 headers from the DFP.
 - **Factory-reset is wired into `btn/btn.c`** as a stacked 3 s/8 s
   threshold (`btn/btn.c:128-168`). Holding both buttons for 8 s
   fires `INPUT_SAVE` at 3 s and `INPUT_FACTORY_RESET` at 8 s; the
-  factory-reset overwrites both EEPROM memory slots with the OEM
-  endstop values (`0x0021` / `0x01d2`). See
-  `oem_reconstruction/docs/FACTORY_RESET.md` for the OEM-style
-  reference and the `Test scenarios` section of `README.md` for the
-  user-facing behaviour summary.
+  factory-reset clears all four EEPROM position slots to `0xFFFF`
+  (the fresh-chip value) and forces the in-memory `low_pos` /
+  `high_pos` to `(0, 0)`, so the next 3-second save behaves like a
+  fresh-chip first save. See `oem_reconstruction/docs/FACTORY_RESET.md`
+  for the OEM-style reference and the `Test scenarios` section of
+  `README.md` for the user-facing behaviour summary.
