@@ -521,6 +521,14 @@ position. The MEM_* state's stop check uses the requested target
 lets the same state drive up *or* down depending on where the
 desk started.
 
+If `cur_pos` is already within `TARGET_DEADBAND` (0x10 encoder
+units, ~3% of the desk's range) of the target, the press is a
+no-op. This prevents the "second press of the same memory button
+slightly drifts the desk away from target" effect: tiny encoder-
+overshoot residuals from the first press (e.g., `cur_pos` at
+`target + 1`) would otherwise flip the direction and pull the
+desk away on the second press.
+
 Stage 0 is the state after a chip erase or a 10-s factory-reset
 (both EEPROM slots read `0xFFFF`, which `bui_init()` turns into
 `low = 0`, `high = 0`). The very first 3-s both-buttons-hold

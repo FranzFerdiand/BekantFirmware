@@ -94,26 +94,44 @@ static int16_t overrun_for(int16_t moved) {
     return moved;
 }
 
+/* No-op deadband for memory recalls: if cur_pos is within this many
+ * encoder units of the requested target, the recall is a no-op.
+ *
+ * Without this, a recall that started slightly past the target on
+ * the previous press would now reverse direction (because cur_pos
+ * > target) and the desk would drift *away* from target on the
+ * second press.  The deadband makes "the desk is already close
+ * enough — don't try to micro-correct" the behaviour the user
+ * expects from a second press of the same button.
+ *
+ * 0x10 is ~3% of the BEKANT desk's full encoder range and is well
+ * within mechanical precision for either direction. */
+#define TARGET_DEADBAND 0x10
+
 /* Start a memory recall moving toward `target`.  The desk converges
  * on `target` from either side: drives UP if cur_pos < target,
- * drives DOWN if cur_pos > target, no movement if already there.
- *
- * No-op if the chip is still in fresh state (low_pos == 0 && high_pos == 0) —
- * there is no memory to recall. */
+ * drives DOWN if cur_pos > target, no movement if already within
+ * TARGET_DEADBAND of the target or if no memory is configured. */
 static void recall_memory(int16_t target) {
     if (low_pos == 0 && high_pos == 0) {
         return;
     }
+    int16_t diff = cur_pos - target;
+    if (diff >= -TARGET_DEADBAND && diff <= TARGET_DEADBAND) {
+        /* Already at the target (within deadband).  Don't update
+         * `mem_target` / `mem_entry_pos` so a subsequent press of
+         * a *different* MEM button still reads the fresh cur_pos. */
+        return;
+    }
     mem_target = target;
     mem_entry_pos = cur_pos;
-    if (cur_pos < target) {
+    if (diff < 0) {
         bui_state = BUI_MEM_UP;
         bctrl_set_target(BCTRL_UP);
-    } else if (cur_pos > target) {
+    } else {
         bui_state = BUI_MEM_DOWN;
         bctrl_set_target(BCTRL_DOWN);
     }
-    /* cur_pos == target: at target, no-op. */
 }
 
 /**
