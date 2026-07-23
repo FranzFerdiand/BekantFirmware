@@ -90,6 +90,7 @@ specific case. Therefor:
 
 ## See also
 
+- [License](LICENSE)
 - [About this fork](docs/ABOUT.md)
 - [Original project by ivanwick compared to fork by DieSteinhose](docs/COMPARISON.md)
 - [State-machine traces](docs/TRACE.md)

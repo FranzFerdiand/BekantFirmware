@@ -58,6 +58,6 @@ $(DFP_ATPACK):
 	    "https://packs.download.microchip.com/$(DFP_NAME).$(DFP_VERSION).atpack"
 
 clean:
-	rm -rf $(BUILDDIR)/* $(DISTDIR)/* $(DFPDIR)/*
+	rm -rf $(BUILDDIR)/* $(DISTDIR)/* $(DFPDIR)/* MPLABXLog.xml
 
 clobber: clean
