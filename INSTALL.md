@@ -68,8 +68,8 @@ buttons on the front and a power cord at the back.
    has photos of the header location.
 4. Plug your PICkit programmer into the ICSP header. The arrow / notch on the
    PICkit connector indicates pin 1 — match it to the silkscreen on the PCB (pin
-   1 is usually marked with a square pad or a "1" see ivanwick's
-   [picture](https://github.com/ivanwick/bekantfirmware/wiki/images/pickit3.jpg).
+   1 is usually marked with a square pad or a "1", see ivanwick's
+   [picture](https://github.com/ivanwick/bekantfirmware/wiki/images/pickit3.jpg)).
 5. **Check the date code** on the white sticker on the surface that touches the
    underside of the desk. It's formatted like `2017/34` (year / week of year).
    See the [Hardware variants](#hardware-variants--code-protection) section

@@ -50,7 +50,7 @@ values retrieved given by the OEM firmware:
 At this point no memory re-call (move to upper/lower position) will work.
 
 As soon as you save your first position, each re-call (upper or lower) will move
-the table to that position (both stores will be set to the same value.
+the table to that position (both stores will be set to the same value).
 
 As soon as you save your second position, it will go into the upper or lower
 memory position depending on whether the new position was bigger/smaller than
@@ -73,8 +73,8 @@ Ready to get it done? Follow these instructions:
 
 The original IKEA BEKANT firmware does not expose memory positions for safety
 and liability reasons. The project by ivanwick preserves a small part of the
-human-in-the-loop requirement as any button press cancels an automatic move (a
-power cut will obviously do fine too). This fork sticks to the same pattern.
+human-in-the-loop requirement as any button press cancels an automatic move. A
+power cut will obviously do fine too. This fork sticks to the same pattern.
 
 Whatever you do, keep in mind, that something could still go wrong in your
 specific case. Therefor:
@@ -83,12 +83,10 @@ specific case. Therefor:
 - Stay near the controller while a memory move is in progress, so you can cancel
   by pressing any button or by plugging the main power cord.
 - The firmware _is intended to_ drop the relay when the desk reaches the
-  physical endstop, so the motor cannot stall indefinitely. (This is implemented
+  physical endstop, so the motor cannot stall indefinitely. This is implemented
   in `src/bekant/endstop.c` via a separate endstop-detector module, hopefully
   fixing the bug described in
   [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4).
-
-**USE AT YOUR OWN RISK**
 
 ## See also
 
