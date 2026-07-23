@@ -1,7 +1,5 @@
 # BEKANT Firmware with standing/sitting memory positions
 
-![Position memory diagram](docs/diagram_white_bg.png)
-
 Control firmware for IKEA BEKANT adjustable-height desk with lower and
 upper memory positions. Can be flashed onto the OEM controller,
 without changing any hardware.
@@ -27,6 +25,8 @@ case of the controller box.
 | press `▽▽` or `▽+△` | move to lower (sitting) position       |
 
 Press a button during a memory move to cancel it (desk stops moving).
+
+![Position memory diagram](docs/diagram_white_bg.png)
 
 ## Open issues
 
