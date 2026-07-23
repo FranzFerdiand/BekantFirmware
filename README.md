@@ -476,24 +476,29 @@ Notes on the table:
   `INPUT_FACTORY_RESET` fires after `INPUT_SAVE` and overwrites the
   saved value at the second click.
 
-### Save rules (which slot gets the new value)
+### Save rules — stage model
 
-`bui_save_pos()` in `src/bekant/bui.c` decides which EEPROM slot to
-overwrite using four cases. The "smaller" / "bigger" / "closer-to"
-comparisons are all on the `encoder` value of the current height
-vs. the values already stored as `low_pos` and `high_pos`.
+The BUI tracks three explicit "stages" based on the two stored memory
+positions. Each stage has its own behaviour for storing and for
+recalling a memory position:
 
-|  Existing state                       |  Current value vs. stored                  |  Slot written  |
-| ------------------------------------- | ----------------------------------------- | -------------- |
-|  fresh chip (both slots = 0)          |  any                                      |  **both** slots (the new value ± decel margin). Either memory button now moves there. |
-|  both slots equal (`low == high`)     |  current value **smaller than** stored     |  low slot      |
-|  both slots equal                     |  current value **larger than** stored      |  high slot     |
-|  slots different (`low != high`)      |  current value **closer to the smaller** of the two stored values (incl. when smaller than both) | low slot |
-|  slots different                      |  current value **closer to the bigger** of the two stored values (incl. when larger than both)  | high slot |
+| Stage | Storage                  | Behaviour on a 3-s save                       | MEM_UP / MEM_DOWN behaviour          |
+| ----- | ------------------------ | -------------------------------------------- | ------------------------------------ |
+| **0** | `low = 0`, `high = 0` (fresh or post-reset) | Populates **both** slots with the new value. | Both buttons are ignored until the first save. |
+| **1** | `low = high = X` (one position) | Smaller-than-stored → LOW slot; larger-or-equal → HIGH slot. Low and high then differ, advancing to Stage 2. | Either button drives the desk toward `X` from whichever side it is on. |
+| **2** | `low < high` (two distinct positions) | Closer-to-the-smaller → LOW (incl. when save < both). Closer-to-the-bigger → HIGH (incl. when save > both). | MEM_UP drives to `high` (only from below); MEM_DOWN drives to `low` (only from above). |
 
-A "fresh chip" is one whose EEPROM is unprogrammed (both slots
-read back as `0xFFFF`, signed-cast to `(int16_t)-1`); `bui_init()`
-turns that into `(low=0, high=0)` so the table above fires.
+Stage 0 is the state after a chip erase or a 10-s factory-reset
+(both EEPROM slots read `0xFFFF`, which `bui_init()` turns into
+`low = 0`, `high = 0`). The very first 3-s both-buttons-hold
+transitions to Stage 1, populating both slots with the same value.
+A second save at a different height transitions to Stage 2; from
+then on MEM_UP drives to `high` and MEM_DOWN drives to `low`.
+
+`bui_save_pos()` in `src/bekant/bui.c` implements the storage
+column.  The stored value is the actual save position (no decel
+offset).  Small mechanical decel overshoot remains but is
+unnoticeable.
 
 The detailed state-machine transitions are documented in
 `docs/TRACE.md` and the disassembly-derived OEM reference is in

@@ -97,12 +97,35 @@ void bui_input(INPUT_t input) {
             } else if (input == INPUT_DOWN) {
                 bui_state = BUI_DOWN;
                 bctrl_set_target(BCTRL_DOWN);
-            } else if (input == INPUT_MEM_UP && cur_pos < high_pos) {
-                bui_state = BUI_MEM_UP;
-                bctrl_set_target(BCTRL_UP);
-            } else if (input == INPUT_MEM_DOWN && cur_pos > low_pos) {
-                bui_state = BUI_MEM_DOWN;
-                bctrl_set_target(BCTRL_DOWN);
+            } else if (input == INPUT_MEM_UP || input == INPUT_MEM_DOWN) {
+                /* Memory recall — three explicit stages:
+                 *   Stage 0 (fresh, both slots == 0)         ignore
+                 *   Stage 1 (one memory, both slots equal)   drive toward it
+                 *   Stage 2 (two distinct memories)          standard checks
+                 */
+                if (low_pos == 0 && high_pos == 0) {
+                    /* Stage 0: nothing to recall. */
+                } else if (low_pos == high_pos) {
+                    /* Stage 1: single memory. Either MEM button
+                     * drives the desk toward low_pos == high_pos
+                     * from whichever side the desk is on. */
+                    if (cur_pos < low_pos) {
+                        bui_state = BUI_MEM_UP;
+                        bctrl_set_target(BCTRL_UP);
+                    } else if (cur_pos > low_pos) {
+                        bui_state = BUI_MEM_DOWN;
+                        bctrl_set_target(BCTRL_DOWN);
+                    }
+                    /* cur_pos == low_pos → already at target, no-op. */
+                } else if (input == INPUT_MEM_UP && cur_pos < high_pos) {
+                    /* Stage 2: standard MEM_UP. */
+                    bui_state = BUI_MEM_UP;
+                    bctrl_set_target(BCTRL_UP);
+                } else if (input == INPUT_MEM_DOWN && cur_pos > low_pos) {
+                    /* Stage 2: standard MEM_DOWN. */
+                    bui_state = BUI_MEM_DOWN;
+                    bctrl_set_target(BCTRL_DOWN);
+                }
             } else if (input == INPUT_SAVE) {
                 /* Defer the EEPROM write to bui_service() (mainline). */
                 pending_save_pos = cur_pos;
@@ -207,23 +230,24 @@ void bui_service(void) {
  *
  * Slot selection follows the spec in the README:
  *
- *   fresh (both slots == 0)
+ *   Stage 0 (fresh, both slots == 0)
  *     -> write save_pos to BOTH slots, so either memory button
  *        moves there.
  *
- *   existing, both slots equal (single preset or freshly populated)
- *     -> smaller-than-preset goes to the LOW slot,
- *        larger-than-preset goes to the HIGH slot.
+ *   Stage 1 (one memory, both slots equal)
+ *     -> smaller-than-stored goes to LOW; larger-or-equal goes to
+ *        HIGH. After this transition the two slots differ and the
+ *        BUI is in Stage 2.
  *
- *   existing, slots differ
+ *   Stage 2 (two distinct memories)
  *     -> closer-to-the-smaller goes to LOW (incl. when save_pos is
  *        smaller than both); closer-to-the-bigger goes to HIGH
  *        (incl. when save_pos is bigger than both).
  *
- * In every case the in-memory low_pos / high_pos is updated so the
- * next MEM_* event targets the newly saved position.  A BCTRL_DECEL_MARGIN
- * is applied to the stored value so the desk begins braking BCTRL_DECEL_MARGIN
- * encoder units before the target and stops AT it.
+ * The stored value is the actual save position (no decel-margin
+ * offset).  The BUI_MEM_* handlers stop the desk when cur_pos
+ * reaches the stored value; small mechanical decel overshoot
+ * remains but is unnoticeable.
  *
  * If the given save_pos looks like an encoder error state (negative),
  * nothing is saved.
@@ -237,27 +261,31 @@ void bui_save_pos(int16_t save_pos) {
     }
 
     if (low_pos == 0 && high_pos == 0) {
-        /* Fresh chip — first save populates both slots. */
-        low_pos  = save_pos + BCTRL_DECEL_MARGIN;
-        high_pos = save_pos - BCTRL_DECEL_MARGIN;
+        /* Stage 0 -> Stage 1: first save populates both slots with
+         * the same value. */
+        low_pos  = save_pos;
+        high_pos = save_pos;
         eeprom_store16(EEPROM_ADDR_LOW_POS,  (uint16_t)low_pos);
         eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
     } else if (low_pos == high_pos) {
-        /* Both stored values equal — compare magnitude. */
+        /* Stage 1 -> Stage 2: a/b rule. save_pos smaller than
+         * stored becomes the new low; save_pos >= stored becomes
+         * the new high. After this low < high. */
         if (save_pos < low_pos) {
-            low_pos = save_pos + BCTRL_DECEL_MARGIN;
+            low_pos = save_pos;
             eeprom_store16(EEPROM_ADDR_LOW_POS, (uint16_t)low_pos);
         } else {
-            high_pos = save_pos - BCTRL_DECEL_MARGIN;
+            high_pos = save_pos;
             eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
         }
     } else if (abs(low_pos - save_pos) < abs(high_pos - save_pos)) {
-        /* Closest to the smaller stored value (includes save < both). */
-        low_pos = save_pos + BCTRL_DECEL_MARGIN;
+        /* Stage 2: closer to the smaller stored value (includes
+         * when save_pos is smaller than both). */
+        low_pos = save_pos;
         eeprom_store16(EEPROM_ADDR_LOW_POS, (uint16_t)low_pos);
     } else {
-        /* Closest to the larger stored value (includes save > both). */
-        high_pos = save_pos - BCTRL_DECEL_MARGIN;
+        /* Closer to the larger stored value (or equal). */
+        high_pos = save_pos;
         eeprom_store16(EEPROM_ADDR_HIGH_POS, (uint16_t)high_pos);
     }
 
