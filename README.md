@@ -421,6 +421,50 @@ The save gesture fires at 3 s, then the factory-reset fires at
   [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md) for the
   analysis and its caveats.
 
+## Test scenarios
+
+These are the hold-duration scenarios the button state machine
+in `src/btn/btn.c` is designed to handle. Tick rate is 50 ms
+(20 Hz) — see `btn/btn.c::btn_init()` for the Timer2 setup.
+
+|  Hold duration            |  State transitions                                         |  Events fired                                       |  Final EEPROM (low, high)       |
+| ------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------------- |
+|  release at 50 ticks      |  IDLE (count 1-49) → IDLE                                  |  (none)                                             |  unchanged                      |
+|  release at 60 ticks      |  IDLE (1-59) → IDLE → SAVE (60th tick) → IDLE              |  `INPUT_SAVE`                                       |  current position               |
+|  release at 100 ticks     |  IDLE (1-59) → IDLE → SAVE → SAVE → IDLE                   |  `INPUT_SAVE`                                       |  current position               |
+|  release at 199 ticks     |  IDLE → SAVE → SAVE → IDLE                                 |  `INPUT_SAVE`                                       |  current position               |
+|  release at 200 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (200) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults (0x0021, 0x01d2)  |
+|  release at 250 ticks     |  IDLE → SAVE → FACTORY_RESET → IDLE                        |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  OEM defaults                   |
+|  release immediately      |  IDLE                                                      |  (none)                                             |  unchanged                      |
+|  release twice quickly    |  press-release-press-release with total held ticks < 60    |  (none — counter accumulates but never crosses 60)  |  unchanged                      |
+
+Notes on the table:
+
+- **`INPUT_SAVE` (3 s mark):** The desk's relay clicks once. The
+  position closest to the current height (upper or lower memory slot)
+  is overwritten with the current encoder value.
+- **`INPUT_FACTORY_RESET` (10 s mark):** The desk's relay clicks a
+  second time. The four OEM default positions are written to EEPROM:
+  `0x0021` (low), `0x00a0`, `0x0120`, and `0x01d2` (high). The BUI
+  then overwrites the two BUI slots at `0x00` and `0x02` with the
+  endstop values, so MEM_UP / MEM_DOWN go to the physical limits.
+- **Why two events on a 10-s hold:** The state machine uses
+  **stacked thresholds** rather than "either/or" — the SAVE event
+  fires at the 60-tick mark and the FACTORY_RESET event fires at
+  the 200-tick mark. This gives the user two distinct audible
+  confirmation clicks (3 s then 10 s) which match what the original
+  IKEA firmware appears to do (`oem_reconstruction/docs/FACTORY_RESET.md:14-15`).
+- **Counter persistence on release:** if the user holds to, say, 50
+  ticks, releases, then re-presses, the counter resumes from 50 (it
+  is not zeroed on release). This is pre-existing ivanwick
+  behaviour that we did not change.
+- **A full 10-s hold is two events but the final state is the OEM
+  defaults**, since `INPUT_FACTORY_RESET` writes after `INPUT_SAVE`.
+
+The detailed state-machine transitions are documented in
+`docs/TRACE.md` and the disassembly-derived OEM reference is in
+`oem_reconstruction/docs/FACTORY_RESET.md`.
+
 ## Hardware variants & code protection
 
 The BEKANT controller has shipped in at least two distinct
