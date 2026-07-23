@@ -70,9 +70,29 @@ static volatile bool pending_factory_reset = false;
  * above instead of being unable to fire; bui_set_pos() still stops
  * when cur_pos reaches mem_target.
  *
+ * `mem_entry_pos` is `cur_pos` at the moment the MEM_* recall started;
+ * the overrun estimator (overrun_for, below) uses how far the desk has
+ * travelled in this recall to scale the BUI stop trigger so the desk
+ * lands precisely on the target — even when the recall starts near the
+ * target with very little momentum.
+ *
  * Plain (non-volatile) is safe: the two ISRs share the single PIC16
  * interrupt vector and never preempt each other. */
 static int16_t mem_target;
+static int16_t mem_entry_pos;
+
+/* Estimate the coast distance the desk will travel after BCTRL_STOP
+ * fires.  At cruising speed the desk coasts BCTRL_DECEL_MARGIN encoder
+ * units; while still accelerating from rest it coasts roughly
+ * proportionally to the distance already travelled.  The cap matches
+ * the BCTRL_DECEL_MARGIN value (0x6c) the ivanwick baseline calibrated
+ * for this hardware.  Negative `moved` is clamped to 0 (defensive:
+ * the desk can briefly move in the wrong direction before settling). */
+static int16_t overrun_for(int16_t moved) {
+    if (moved < 0) return 0;
+    if (moved > BCTRL_DECEL_MARGIN) return BCTRL_DECEL_MARGIN;
+    return moved;
+}
 
 /* Start a memory recall moving toward `target`.  The desk converges
  * on `target` from either side: drives UP if cur_pos < target,
@@ -85,6 +105,7 @@ static void recall_memory(int16_t target) {
         return;
     }
     mem_target = target;
+    mem_entry_pos = cur_pos;
     if (cur_pos < target) {
         bui_state = BUI_MEM_UP;
         bctrl_set_target(BCTRL_UP);
@@ -204,21 +225,30 @@ void bui_input(INPUT_t input) {
 void bui_set_pos(int16_t pos) {
     cur_pos = pos;
     switch (bui_state) {
-        case BUI_MEM_UP:
-            /* Stop when the desk reaches the recall target.  The target
-             * is set by recall_memory() so this works regardless of
-             * whether we arrived from above or below. */
-            if (cur_pos >= mem_target) {
+        case BUI_MEM_UP: {
+            /* Fire STOP this far short of `mem_target`.  The estimate
+             * ramps up with how far the desk has travelled in this
+             * recall (proxy for accumulated momentum), capped at the
+             * ivanwick-calibrated decel-overrun value.  The desk's
+             * post-STOP coast lands near the target — whether we
+             * arrived from below or from above (the latter happens
+             * when the user presses MEM_UP from a position higher
+             * than `high_pos`, which reverses the direction). */
+            int16_t overrun = overrun_for(cur_pos - mem_entry_pos);
+            if (cur_pos >= mem_target - overrun) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
             }
             break;
-        case BUI_MEM_DOWN:
-            if (cur_pos <= mem_target) {
+        }
+        case BUI_MEM_DOWN: {
+            int16_t overrun = overrun_for(mem_entry_pos - cur_pos);
+            if (cur_pos <= mem_target + overrun) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
             }
             break;
+        }
         default:
             break;
     }

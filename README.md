@@ -530,8 +530,11 @@ then on MEM_UP drives to `high` and MEM_DOWN drives to `low`.
 
 `bui_save_pos()` in `src/bekant/bui.c` implements the storage
 column.  The stored value is the actual save position (no decel
-offset).  Small mechanical decel overshoot remains but is
-unnoticeable.
+offset).  The BUI's `bui_set_pos()` decel-overrun estimator
+triggers `BCTRL_STOP` just short of the target by an amount scaled
+to how far the desk has travelled in the current recall (proxy for
+momentum), so the post-`BCTRL_STOP` coast lands precisely on the
+target — whether the recall starts from below or from above.
 
 The detailed state-machine transitions are documented in
 `docs/TRACE.md` and the disassembly-derived OEM reference is in
