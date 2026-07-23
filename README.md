@@ -280,6 +280,10 @@ command line tool, you might need to downgrade your PICkit's firmware from
 which runs on Linux and Windows only. Unfortunately there is no macOS release,
 but only need it once (or twice for resetting back to MPLAB mode).
 
+In order to change the firmware, choose "Tools > Download PICkit Operating
+System" from the menu. It will open the folder you called the executable from
+and this contains a PK3OS*.hex file. Choose that file and wait until updated.
+
 The *pk2cmd* command line tool meanwhile is available for all OS'es. Make it
 available somehow for ease of access - here is an alias variant for macOS:
 
