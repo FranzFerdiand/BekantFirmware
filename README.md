@@ -1,17 +1,22 @@
 # BEKANT Firmware with standing/sitting memory positions
 
-Control firmware for IKEA BEKANT adjustable-height desk with lower and
-upper memory positions. Can be flashed onto the OEM controller,
-without changing any hardware.
+Control firmware for IKEA BEKANT adjustable-height desk with lower and upper
+memory positions. Can be flashed onto the OEM controller, without changing any
+hardware.
 
-Pre-program a sitting and standing position for your desk and move
-between them with a single button press.
+Pre-program a sitting and standing position for your desk and move between them
+with a single button press.
 
-All you need is a PICkit 3 programmer (available on Aliexpress for little more
-than 10 €/USD + shipment) and some patience when forcing open the plastic
-case of the controller box.
+This guide's primary focus is on the very affordable PICkit 3 programmer
+(available on Aliexpress for little more than 10 €/USD + shipment), but gives
+some hints on how to use PICkit 2 / 3 / 4 / 5 programmers on (as of writing
+in 2026) current operating systems as well.
 
-**IMPORTANT:** see the [Disclaimer](#disclaimer) below.
+All you need:
+
+1. said PICkit 3 programmer (~20 bucks)
+2. patience and delicacy while opening the plastic case of the controller box
+3. to have read the [Disclaimer](#disclaimer) below (**IMPORTANT!**)
 
 ![Position memory diagram](docs/diagram_white_bg.png)
 
@@ -35,633 +40,69 @@ positions will be cleared (rather set to 0xffff), while the end-stop positions
 (physical limits to where the motors may move the table) will be set to the
 values retrieved given by the OEM firmware:
 
-|  Address  |  Value   |  Role                                           |
-| --------- | -------- | ----------------------------------------------- |
-|  0x00     |  0x0021  |  OEM_BOTTOM_ENDSTOP — physical bottom end-stop  |
-|  0x02     |  0xffff  |  OEM_LOW_MEMORY — lower memory target           |
-|  0x04     |  0xffff  |  OEM_HIGH_MEMORY — upper memory target          |
-|  0x06     |  0x01d2  |  OEM_TOP_ENDSTOP — physical top end-stop        |
+| Address | Value  | Role                                          |
+| ------- | ------ | --------------------------------------------- |
+| 0x00    | 0x0021 | OEM_BOTTOM_ENDSTOP — physical bottom end-stop |
+| 0x02    | 0xffff | OEM_LOW_MEMORY — lower memory target          |
+| 0x04    | 0xffff | OEM_HIGH_MEMORY — upper memory target         |
+| 0x06    | 0x01d2 | OEM_TOP_ENDSTOP — physical top end-stop       |
 
 At this point no memory re-call (move to upper/lower position) will work.
 
-As soon as you save your first position, each re-call (upper or lower) will
-move the table to that position (both stores will be set to the same value.
+As soon as you save your first position, each re-call (upper or lower) will move
+the table to that position (both stores will be set to the same value.
 
 As soon as you save your second position, it will go into the upper or lower
 memory position depending on whether the new position was bigger/smaller than
 the one before.
 
-Each consecutive save operation will store at the memory-slot which is closer
-to the current postion, making the whole operation quite intuitive.
+Each consecutive save operation will store at the memory-slot which is closer to
+the current position, making the whole operation quite intuitive.
 
-## About this fork
+## Installation
 
-Analysis of the original OEM firmware (disassembly and rebuild in C) was done
-using the MiniMax-M3 LLM, followed by a cleanup session using Claude Opus 4.8.
+Ready to get it done? Follow these instructions:
 
-First live tests still had some major issues, but were resolve using the Kimi
-K3 LLM. After this, manual operation, storing (to be improved) and positioning
-(both by double-clicking △△ or ▽▽ and sequence-clicking △+▽ or ▽+△) do work.
-
-The original release at
-[ivanwick/bekantfirmware](https://github.com/ivanwick/bekantfirmware)
-adds position memory to the OEM controller. The
-[DieSteinhose/bekantfirmware](https://github.com/DieSteinhose/bekantfirmware)
-fork changes the gesture you use to invoke a memory position.
-
-This project:
-
-1. **Supports both gesture styles at the same time.** You can use ivanwick's
-   "combo-press" (hold one button, tap the other) or DieSteinhose's "double-
-   tap". The unified state machine in `btn/btn.c` handles both.
-2. **Implements an 8-second factory-reset** by holding both buttons. Distinct
-   from the existing 3-second save gesture (which saves the current position)
-   the 8-second hold clears the saved memory positions so the next 3-second
-   save behaves like a first save on a fresh chip (populates both slots).
-   The two gestures share one counter using a *stacked-threshold* state
-   machine, so an 8-second hold fires both events (SAVE at 3 s,
-   FACTORY_RESET at 8 s).
-3. **Includes a best-effort C reconstruction** of the original IKEA firmware
-   in `oem_reconstruction/`, for future reference and as a *tentative* attempt
-   at the endstop behaviour described in
-   [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4).
-
-The rest of the source is mostly identical to ivanwick's original project,
-with these additions / fixes:
-
-- **`btn/`** rewritten to support both gesture styles at the
-  same time, plus the stacked 3 s/8 s thresholds for save /
-  factory-reset.
-- **`bekant/bui.c`** now responds to `INPUT_FACTORY_RESET` by
-  calling `bui_factory_reset()` which clears the saved memory
-  positions to fresh-chip state (in-memory `(0, 0)` plus `0xFFFF`
-  in all four EEPROM slots) so the next 3-second save populates
-  both slots.
-- **`bekant/eeprom_defaults.{c,h}`** provides raw-register
-  EEPROM read/write helpers and `eeprom_factory_reset()`.
-  EEPROM writes run from mainline only: `bui_input()` (Timer2
-  ISR) just latches the request and `bui_service()` — called
-  from the main loop — performs the writes (with `CLRWDT()`
-  in the ~5 ms/byte busy-wait), so the Timer4 LIN scheduler
-  keeps running during save / factory-reset.
-- **`bekant/bctrl.{c,h}`** uses ivanwick's BCMD values
-  (0x86 up / 0x85 down / 0xfc stop / …), which are proven on
-  hardware — the desk moves in both directions while a button
-  is held.  The OEM bytes recovered from the disassembly
-  (0xca/0x0d/…) turned out to belong to the encoder/endstop-check
-  layer, not the direct motion commands.  See
-  [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md).
-- **`bekant/endstop.{c,h}`** is the *proposed* endstop /
-  over-travel detector (a *tentative* fix for issue #4); it is
-  registered from `user.c::InitApp()` and ticked once per
-  scheduler slot from `bctrl_timer()`. Not yet verified.
-- **`interrupts.c`** declares the ISR with the `__interrupt()`
-  qualifier — without it, XC8 free mode appears to dead-strip
-  the function and the interrupt vector would stay empty.
-
-### Open issues
-
-At one point only one leg was moving (I had to erase + re-program, but was
-not able to reproduce the case and it happened only once, possibly after a
-reset). But meanwhile there different modifications that could have fixed
-this unintentionally. Keeping an eye on it.
-
-### Project layout
-
-```
-BekantFirmware/
-├── README.md
-├── docs/
-│   ├── COMPARISON.md
-│   ├── DELIVERABLE.md
-│   ├── diagram_white_bg.png
-│   ├── ENDSTOP_ANALYSIS.md
-│   └── TRACE.md
-├── oem_reconstruction/                  ← reverse-engineered reference impl
-│   ├── README.md
-│   ├── ANALYSIS.md
-│   ├── main.c / system.c / user.c / interrupts.c / configuration_bits.c
-│   ├── btn/ lin/ bekant/
-│   ├── bekant/endstop.c                 ← recovered endstop detector
-│   ├── bekant/bcmd_table.c / bcmd_table.h / oem_tables.c
-│   ├── docs/                            ← STATE_MACHINE / ENCODER_TABLE / FACTORY_RESET
-│   └── disassembly/                     ← orginafirm.hex + .asm dumps
-└── src/
-    ├── main.c
-    ├── configuration_bits.c
-    ├── system.c / system.h
-    ├── user.c / user.h
-    ├── interrupts.c                     ← void __interrupt() isr(void) (the ISR fix)
-    ├── Makefile
-    ├── btn/btn.h                        ← INPUT_t enum, gesture documentation
-    ├── btn/btn.c                        ← unified state machine; stacked 3 s/8 s thresholds
-    ├── lin/lin_d.c / lin_d.h            ← LIN driver
-    ├── bekant/bscan.c / bscan.h         ← startup bus scan
-    ├── bekant/bctrl.c / bctrl.h         ← LIN control plane (now uses OEM BCMD values)
-    ├── bekant/bui.c / bui.h             ← upper-level UI (handles INPUT_SAVE + INPUT_FACTORY_RESET)
-    ├── bekant/eeprom_defaults.{c,h}     ← raw-reg EEPROM helpers, eeprom_factory_reset()
-    ├── bekant/endstop.c / endstop.h     ← recovered endstop detector, wired in
-    └── test_sfr_stubs.h / .c            ← syntax-only shim (real build uses src/ directly)
-```
-
-## Building and uploading
-
-These instructions assume a macOS/Linux host, an PICkit 3 programmer, and a
-fresh out-of-the-box BEKANT controller that you are about to overwrite.
-
-**Flashing the firmware is irreversible without a backup of the original
-`.hex`**, so read the [disclaimer](#disclaimer) first.
-
-> **Before you start** — please read [Hardware variants & code protection](#hardware-variants--code-protection)
-> below. Newer BEKANT desks (manufactured 2019 or later) have code protection
-> enabled on the PIC, which means you cannot read the original firmware back
-> from the chip.
->
-> If yours is a newer unit, back up with a known-good dump or release instead
-> (the hex release from ivanwick's project, or the backup contributed by
-> another user) and accept that you may not be able to roll back to the OEM
-> firmware.
-
-### 1. Get the toolchain
-
-You need Microchip's XC8 C compiler (the free one is fine):
-
-- Download XC8: <https://www.microchip.com/mplab/compilers>
-
-Confirm installation works (`xc8-cc` should be added to the PATH during installation):
-
-```sh
-xc8-cc --version
-```
-
-### 2. Build the new firmware
-
-Make sure you have GNU Make installed. It should come with most/all Linux
-distros (otherwise search for the specific `make` package and install it),
-while on macOS you might need to install in one of two ways:
-
-1. Xcode Command Line Tools: ```xcode-select --install```
-2. Homebrew: ```brew install make```
-
-Then you should be able to simply run:
-
-```sh
-make
-```
-
-The build should give you `dist/bekantfirmware.hex` (about 16 KB in size).
-
-### 3. Disassemble the BEKANT controller box
-
-The BEKANT controller is a small plastic box attached to the desk, with two
-buttons on the front and a power cord at the back.
-
-1. **Unplug the desk from mains.** Capacitors inside the controller hold
-   enough charge to damage your programmer and the PIC, so after unplugging
-   the desk press the up/down buttons to fully discharge them.
-2. Now open the controller enclosure. IKEA has welded the plastic back plate,
-   so do not expect the case to come apart easily. Two excellent community
-   guides for getting inside the case without destroying it were originally
-   collected in [ivanwick/bekantfirmware issue #11](https://github.com/ivanwick/bekantfirmware/issues/11)
-   - YouTube walkthrough: <https://www.youtube.com/watch?v=jCPlM2KYwDQ>
-   - iFixit teardown: <https://www.ifixit.com/Teardown/Ikea+Bekant+Controller+Teardown/142516>
-3. Locate the **ICSP header** on the PCB — a 6-pin (2×3) header
-   labelled `ICSP`, `PICKIT`, or similar. The original project's
-   [Installation Guide](https://github.com/ivanwick/bekantfirmware/wiki/Installation-Guide)
-   has photos of the header location.
-4. Plug your PICkit programmer into the ICSP header. The arrow / notch
-   on the PICkit connector indicates pin 1 — match it to the
-   silkscreen on the PCB (pin 1 is usually marked with a square pad
-   or a "1" see ivanwick's [picture](https://github.com/ivanwick/bekantfirmware/wiki/images/pickit3.jpg).
-5. **Check the date code** on the white sticker on the surface that
-   touches the underside of the desk. It's formatted like
-   `2017/34` (year / week of year). See the
-   [Hardware variants](#hardware-variants--code-protection) section
-   below for what to do with that information.
-
-### 4. Setting up the programmer
-
-#### 4.1 Limitations
-Legacy PICkit's are no longer actively supported by Microchip Technology Inc.
-meaning you would not be able to use current versions of either
-
-- [MPLAB X IDE](https://www.microchip.com/en-us/tools-resources/develop/mplab-x-ide)
-- [MPLAB Tools for VS Code](https://www.microchip.com/en-us/tools-resources/develop/mplab-tools-vs-code)
-
-Older versions of the *MPLAB X IDE* might not run on current operating systems
-as macOS 26, and one would need a much more expensive *PICkit 5* or *MPLAB SNAP*
-in order to use these tools today.
-
-Fortunately enough, there are free tools available for the older and cheaper
-PICkit programmer that still work (at least mid-2026).
-
-I will give examples for both options in later sections.
-
-#### 4.2 Option 1: jpecmd.jar from MPLAB X v6.20 (for PICkit 3 / 4 / 5)
-Use *jpecmd.jar* provided by Microchip by installing the retired/archived
-[MPLAB X v6.20](https://www.microchip.com/en-us/tools-resources/archives/mplab-ecosystem).
-
-You might want to create an *ipecmd* alias, as this is what I'll use in the
-examples below. Here are setup instructions for macOS 26 (you'll need to have
-MPLAB X v6.20 already installed):
-
-```sh
-# set one of 3, 4 or 5
-PICKIT_VERSION=3
-PIC_SELECTOR=16LF1938
-
-MPLAB_JRE_JAVA=`find /Applications/microchip/mplabx/v6.20 -name java -type file`
-MPLAB_IPECMD_JAR=`find /Applications/microchip/mplabx/v6.20 -name ipecmd.jar -type file`
-
-echo "alias ipecmd='${MPLAB_JRE_JAVA} -jar ${MPLAB_IPECMD_JAR} -P${PIC_SELECTOR} -TPPK${PICKIT_VERSION} -W'" >> ~/.zshrc
-alias ipecmd='${MPLAB_JRE_JAVA} -jar ${MPLAB_IPECMD_JAR} -P${PIC_SELECTOR} -TPPK${PICKIT_VERSION} -W'
-```
-
-Now test it by running a blank check using *ipecmd*:
-
-```sh
-ipecmd -C
-```
-
-Expect the output to look something like this:
-
-```text
-DFP Version Used : PIC12-16F1xxx_DFP,1.9.258,Microchip
-*****************************************************
-Connecting to MPLAB PICkit 3...
-Currently loaded firmware on PICkit 3
-Firmware Suite Version.....01.56.09
-Firmware type..............Enhanced Midrange
-Programmer to target power is enabled - VDD = 3,250000 volts.
-Target device PIC16LF1938 found.
-Device Revision ID = 3
-Blank Checking...
-program memory
-Address: 0 Expected Value: 3fff Received Value: 3180
-Blank check complete, device is not blank.
-PICkit 3 removed
-```
-
-#### 4.3 Option 2: pk2cmd and PICkitminus (for PICkit 2 / 3)
-In order to be able to use the [pk2cmd](https://github.com/jaka-fi/pk2cmd)
-command line tool, you might need to downgrade your PICkit's firmware from
-"MPLAB mode" it was delivered with to the "scripting firmware" using the
-[PICkitminus](https://github.com/jaka-fi/PICkitminus) GUI software suite
-which runs on Linux and Windows only. Unfortunately there is no macOS release,
-but only need it once (or twice for resetting back to MPLAB mode).
-
-In order to change the firmware, choose "Tools > Download PICkit Operating
-System" from the menu. It will open the folder you called the executable from
-and this contains a PK3OS*.hex file. Choose that file and wait until updated.
-
-The *pk2cmd* command line tool meanwhile is available for all OS'es. Make it
-available somehow for ease of access - here is an alias variant for macOS:
-
-```sh
-PK2CMD_EXECUTABLE=~/Downloads/pk2cmd_1_27_01/pk2cmd
-
-echo "alias pk2cmd='~/Downloads/pk2cmd_1_27_01/pk2cmd -PPIC16LF1938'" >> ~/.zshrc
-alias pk2cmd='~/Downloads/pk2cmd_1_27_01/pk2cmd -PPIC16LF1938'
-```
-
-Now test it by running *pk2cmd* from the local folder:
-
-```sh
-pk2cmd -I
-```
-
-Expect the output to look something like this:
-
-```text
-Auto-Detect: Found part PIC16LF1938.
-
-Device ID = 24A0
-Revision  = 0003
-Device Name = PIC16LF1938
-
-Operation Succeeded
-```
-
-... and if you see some about "MPLAB mode", well then you still need to
-downgrade the programmers firmware using *PICkitminus*.
-
-### 5. Back up the original firmware (strongly recommended, with caveats)
-
-> **Read [Hardware variants](#hardware-variants--code-protection)
-> first.** On desks manufactured 2019 or later the PIC is code-protected
-> and a backup will read back as all zeros. You cannot recover the
-> OEM firmware from a newer chip.
-
-On a desk that is **not** code-protected (typically manufactured
-before 2019), read the original PIC's flash and EEPROM and save
-the `.hex` file before you write anything:
-
-```sh
-# Option 1: ipecmd.jar
-ipecmd -GF"bekantfirmware-backup.hex"
-# Option 2: pk2cmd
-pk2cmd -GF bekantfirmware-backup.hex
-```
-
-Now verify the backup is real (not all zeros) by checking the file
-size and contents:
-
-```sh
-# A real firmware dump is ~94 KB. A code-protected dump is 0 bytes
-# or all 0x00 / 0xFF.
-ls -l bekantfirmware-backup.hex
-# Read the first 16 bytes; for a real dump you should see a mix of
-# non-zero values that look like Intel HEX records.
-head -3 bekantfirmware-backup.hex
-```
-
-If your backup is all zeros, your PIC is code-protected. Use the
-reference dump
-[`orginafirm.hex.zip`](https://github.com/ivanwick/bekantfirmware/files/7874509/orginafirm.hex.zip)
-instead — see
-[Hardware variants](#hardware-variants--code-protection) for the
-caveats.
-
-### 6. Flash the new firmware
-
-You might want/need to erase the PIC16LF1938 on newer (post-2019) models of
-the Bekant desk to disable the code protection:
-
-```sh
-# Option 1: ipecmd.jar
-ipecmd -E
-# Option 2: pk2cmd
-pk2cmd -E
-```
-
-Now you can load the new firmware to the PIC16LF1938:
-
-```sh
-# Option 1: ipecmd.jar
-ipecmd -F"dist/bekantfirmware.hex" -M -Y -OL
-# Option 2: pk2cmd
-pk2cmd -F dist/bekantfirmware.hex -M -Y
-```
-
-### 7. Restore the EEPROM defaults (optional)
-
-Ivanwick's project firmware stores the memory positions in the
-PIC's EEPROM at offsets `0x00` and `0x02`, with defaults
-`0x0636` and `0x1600`. If you flashed a fresh unit, these defaults
-are already correct. If you reprogrammed a unit that already had
-custom positions, you have two options:
-
-**Set manually** — move to each height, then hold both buttons
-for 3 s to save:
-
-- Move the desk to the desired sitting height, then press and
-  hold both buttons for 3 seconds.
-- Move the desk to the desired standing height, then press and
-  hold both buttons for 3 seconds.
-
-**Factory reset** — hold both buttons for the full 8 seconds.
-The save gesture fires at 3 s, then the factory-reset fires at
-8 s and clears both memory slots to the fresh-chip state. The
-very next 3-second both-buttons-hold will then populate both slots
-with the same target (first-save rules apply).
-
-### 8. Close the controller and test
-
-1. Unplug the programmer (USB cable)
-2. Remove the programmer from the board
-3. Reassemble the controller enclosure.
-4. Plug the desk back into mains.
-5. Test the basic motion (hold `△` / `▽`).
-6. Test the memory positions
-
-### Troubleshooting
-
-- **PICkit not detected.** Check the USB cable. On Linux you may need
-  udev rules; Microchip publishes them in
-  `/opt/microchip/mplabx/<version>/mplab_ide/docs/` after install.
-- **"Device ID mismatch".** The PIC you have is not a PIC16LF1938.
-  Double-check the chip marking on the top of the IC.
-- **"Programming failed at address 0x0000".** The ICSP cable is
-  reversed or a pin is shorted. Inspect the connector and try again.
-- **The desk doesn't move but the controller's lights are on.** The
-  bus scan failed. Power-cycle the desk and try again.
-- **The relay stays engaged at the endstop.** This *may* be
-  the same bug as
-  [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4)
-  (we have not confirmed). The proposed endstop detector is
-  included in the `oem_reconstruction/` folder and is wired
-  into the main build (`src/bekant/endstop.c`, registered in
-  `user.c::InitApp()` and ticked from `bctrl_timer()`). It has
-  not been verified on a real BEKANT controller. See
-  [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md) for the
-  analysis and its caveats.
-
-## Test scenarios
-
-These are the hold-duration scenarios the button state machine
-in `src/btn/btn.c` is designed to handle. Tick rate is 50 ms
-(20 Hz) — see `btn/btn.c::btn_init()` for the Timer2 setup.
-
-|  Hold duration            |  State transitions                                         |  Events fired                                       |  Final EEPROM (low, high)       |
-| ------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------------- |
-|  release at 50 ticks      |  IDLE (count 1-49) → IDLE                                  |  (none)                                             |  unchanged                      |
-|  release at 60 ticks      |  IDLE (1-59) → IDLE → SAVE (60th tick) → IDLE              |  `INPUT_SAVE`                                       |  per the save rules below        |
-|  release at 100 ticks     |  IDLE (1-59) → IDLE → SAVE → SAVE → IDLE                   |  `INPUT_SAVE`                                       |  per the save rules below        |
-|  release at 159 ticks     |  IDLE → SAVE (60) → SAVE → IDLE                            |  `INPUT_SAVE`                                       |  per the save rules below        |
-|  release at 160 ticks     |  IDLE → SAVE (60) → SAVE → FACTORY_RESET (160) → IDLE      |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  cleared to 0xFFFF / (0, 0)    |
-|  release at 250 ticks     |  IDLE → SAVE → FACTORY_RESET → IDLE                        |  `INPUT_SAVE` + `INPUT_FACTORY_RESET`               |  cleared to 0xFFFF / (0, 0)    |
-|  release immediately      |  IDLE                                                      |  (none)                                             |  unchanged                      |
-|  release twice quickly    |  press-release-press-release with total held ticks < 60    |  (none — counter resets to 0 on release)            |  unchanged                      |
-
-Notes on the table:
-
-- **`INPUT_SAVE` (3 s mark):** The desk's relay clicks once. The
-  current encoder position is written into one of the two EEPROM
-  slots per the rules below.
-- **`INPUT_FACTORY_RESET` (8 s mark):** The desk's relay clicks a
-  second time. All four EEPROM position slots are written with
-  `0xFFFF` and the in-memory `low_pos` / `high_pos` are forced to
-  `(0, 0)`, so the next 3-second both-buttons-hold behaves like a
-  fresh-chip first save (populates both slots per the save-rules
-  table below).
-- **Why two events on an 8-s hold:** The state machine uses
-  **stacked thresholds** rather than "either/or" — the SAVE event
-  fires at the 60-tick mark and the FACTORY_RESET event fires at
-  the 160-tick mark. This gives the user two distinct audible
-  confirmation clicks (3 s then 8 s) and matches the spirit of the
-  original IKEA firmware's behaviour
-  (`oem_reconstruction/docs/FACTORY_RESET.md`).
-- **Counter reset on release:** if the user holds, releases, then
-  re-presses, the hold counter is reset to 0 on each release so the
-  next gesture starts fresh. (Earlier versions carried the count
-  across releases, which could fire a spurious save or
-  factory-reset immediately on a brief re-press.)
-- **A full 8-s hold is two events; the final state is the
-  fresh-chip state** (`(0, 0)` in memory, `0xFFFF` in EEPROM), since
-  `INPUT_FACTORY_RESET` fires after `INPUT_SAVE` and overwrites the
-  saved value at the second click.
-
-### Save rules — stage model
-
-The BUI tracks three explicit "stages" based on the two stored memory
-positions. Each stage has its own behaviour for storing and for
-recalling a memory position:
-
-| Stage | Storage                  | Behaviour on a 3-s save                       | MEM_UP / MEM_DOWN behaviour          |
-| ----- | ------------------------ | -------------------------------------------- | ------------------------------------ |
-| **0** | `low = 0`, `high = 0` (fresh or post-reset) | Populates **both** slots with the new value. | Both buttons are ignored until the first save. |
-| **1** | `low = high = X` (one position) | Smaller-than-stored → LOW slot; larger-or-equal → HIGH slot. Low and high then differ, advancing to Stage 2. | Either button drives the desk toward `X` from whichever side it is on. |
-| **2** | `low < high` (two distinct positions) | Closer-to-the-smaller → LOW (incl. when save < both). Closer-to-the-bigger → HIGH (incl. when save > both). | MEM_UP drives to `high`; MEM_DOWN drives to `low`. **Either button works from any starting position** — the desk converges on the target from above or below. |
-
-The buttons always accept in Stages 1 and 2; the press declares an
-intent ("go to upper" / "go to lower") and the firmware chooses
-the driving direction so the desk always lands on the recalled
-position. The MEM_* state's stop check uses the requested target
-(rather than the default `high_pos`/`low_pos`), which is what
-lets the same state drive up *or* down depending on where the
-desk started.
-
-If `cur_pos` is already within `TARGET_DEADBAND` (0x10 encoder
-units, ~3% of the desk's range) of the target, the press is a
-no-op. This prevents the "second press of the same memory button
-slightly drifts the desk away from target" effect: tiny encoder-
-overshoot residuals from the first press (e.g., `cur_pos` at
-`target + 1`) would otherwise flip the direction and pull the
-desk away on the second press.
-
-Stage 0 is the state after a chip erase or a 10-s factory-reset
-(both EEPROM slots read `0xFFFF`, which `bui_init()` turns into
-`low = 0`, `high = 0`). The very first 3-s both-buttons-hold
-transitions to Stage 1, populating both slots with the same value.
-A second save at a different height transitions to Stage 2; from
-then on MEM_UP drives to `high` and MEM_DOWN drives to `low`.
-
-`bui_save_pos()` in `src/bekant/bui.c` implements the storage
-column.  The stored value is the actual save position (no decel
-offset).  The BUI's `bui_set_pos()` decel-overrun estimator
-triggers `BCTRL_STOP` just short of the target by an amount scaled
-to how far the desk has travelled in the current recall (proxy for
-momentum), so the post-`BCTRL_STOP` coast lands precisely on the
-target — whether the recall starts from below or from above.
-
-The detailed state-machine transitions are documented in
-`docs/TRACE.md` and the disassembly-derived OEM reference is in
-`oem_reconstruction/docs/FACTORY_RESET.md`.
-
-## Hardware variants & code protection
-
-The BEKANT controller has shipped in at least two distinct
-hardware revisions. The variants differ in two ways that matter
-for this project: **how easy the case is to open**, and **whether
-the firmware can be read back from the PIC**.
-
-### Disassembly difficulty
-
-The controller case is ultrasonically welded. IKEA has progressively
-added more weld spots to deter modifications. Newer units (2019+)
-have noticeably more welds and may require cutting or prying to
-get the back plate off. The damage is cosmetic and the case still
-holds together when you put it back. See the disassembly section
-above.
-
-### Code protection on newer units
-
-**The most important variant to be aware of:** desks manufactured
-roughly 2019 or later ship with the PIC's **code-protection (CP)
-config bit enabled**. When CP is set, the PIC refuses to read back
-its own flash memory over ICSP. The programmer will still **write**
-the chip (which is what you need to install the new firmware), but
-a backup "read" will return all zeros.
-
-Symptoms reported in
-[ivanwick/bekantfirmware issue #5](https://github.com/ivanwick/bekantfirmware/issues/5)
-and
-[ivanwick/bekantfirmware issue #2 comments 1013629545 / 1013637468](https://github.com/ivanwick/bekantfirmware/issues/2)
-include:
-
-- *"I was able to flash the pic but not to be able to read ... the
-  backup ... was zeros only."* — code-protected.
-- *"It did not autodetect it and was not able to make a working
-  backup of the flash."* — usually code-protected.
-- *Backup dump is suspiciously small (0 bytes or only `0x00` /
-  `0xFF` records).* — code-protected.
-
-If your backup reads back as all zeros, **do not assume the
-firmware is gone** — it is just locked. You can still flash the
-new firmware, you just cannot recover the OEM firmware from your
-specific unit.
-
-To flash a code-protected unit, you must temporarily erase the
-chip (which clears the CP bit along with the firmware). After
-erasing, you can write the new firmware normally (see instructions
-above).
-
-### Reference firmware dump for code-protected units
-
-For code-protected units where you cannot read the OEM firmware
-back, the ivanwick project bundles a reference dump
-([`orginafirm.hex.zip`](https://github.com/ivanwick/bekantfirmware/files/7874509/orginafirm.hex.zip))
-that you can flash to restore factory behaviour. This dump is
-bundled with this project too — see
-`oem_reconstruction/disassembly/orginafirm.hex`.
-
-**Caveats:**
-
-- The reference dump is **unverified by the project author**. It
-  was posted in
-  [issue #2 comment 1013637468](https://github.com/ivanwick/bekantfirmware/issues/2#issuecomment-1013637468)
-  by a user reading their own pre-2019 unit ("This is NOT verified
-  or tested, but its the read from my original firmware"). It was
-  then tested by another user
-  ([issue #2 comment 1013638297](https://github.com/ivanwick/bekantfirmware/issues/2#issuecomment-1013638297))
-  who reported it worked on a 2017-vintage unit, but that is
-  anecdotal.
-- The dump is for a **specific hardware revision** of the BEKANT
-  controller. Newer revisions may use a different PIC, a different
-  LIN protocol, or a different leg controller, in which case the
-  reference dump will not work. If flashing the reference dump
-  causes the desk to misbehave (e.g. relay engaged but legs not
-  moving, LIN errors, etc.), your hardware is incompatible.
-- If you flash the reference dump and later want to go back to the
-  ivanwick firmware, the round-trip has not been tested.
-
-In short: **treat the reference dump as a recovery option, not a
-guaranteed rollback**.
+- [Installation](INSTALL.md)
+- [Testing](docs/TESTING.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ## Disclaimer
 
-**- USE - AT - YOUR - OWN - RISK -**
+**USE AT YOUR OWN RISK**
 
 The original IKEA BEKANT firmware does not expose memory positions for safety
 and liability reasons. The project by ivanwick preserves a small part of the
-human-in-the-loop requirement as any button press cancels an automatic move
-(a power cut will obviously do fine too). This fork sticks to the same pattern.
+human-in-the-loop requirement as any button press cancels an automatic move (a
+power cut will obviously do fine too). This fork sticks to the same pattern.
 
 Whatever you do, keep in mind, that something could still go wrong in your
 specific case. Therefor:
 
 - Keep the desk's path clear during all movement.
-- Stay near the controller while a memory move is in progress, so you can
-  cancel by pressing any button or by plugging the main power cord.
-- The firmware *is intended to* drop the relay when the desk reaches the
-  physical endstop, so the motor cannot stall indefinitely. (This is
-  implemented in `src/bekant/endstop.c` via a separate endstop-detector
-  module, hopefully fixing the bug described in
+- Stay near the controller while a memory move is in progress, so you can cancel
+  by pressing any button or by plugging the main power cord.
+- The firmware _is intended to_ drop the relay when the desk reaches the
+  physical endstop, so the motor cannot stall indefinitely. (This is implemented
+  in `src/bekant/endstop.c` via a separate endstop-detector module, hopefully
+  fixing the bug described in
   [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4).
 
-**- USE - AT - YOUR - OWN - RISK -**
+**USE AT YOUR OWN RISK**
 
 ## See also
 
-- [docs/COMPARISON.md](docs/COMPARISON.md) — ivanwick vs DieSteinhose
-- [docs/TRACE.md](docs/TRACE.md) — state-machine traces
-- [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md) — endstop fix analysis
-- [oem_reconstruction/](oem_reconstruction/) — reconstructed C code
+- [About this fork](docs/ABOUT.md)
+- [Original project by ivanwick compared to fork by DieSteinhose](docs/COMPARISON.md)
+- [State-machine traces](docs/TRACE.md)
+- [End-stop analysis](docs/ENDSTOP_ANALYSIS.md)
+- [reconstructed C code from OEM firmware disassembly](oem_reconstruction/)
 
 ## References
 
-1. <a name="1">https://web.archive.org/web/20190116092248/https://blog.rnix.de/hacking-ikea-bekant/</a>
-2. <a name="2">https://github.com/trainman419/bekant</a>
-3. <a name="3">https://github.com/robin7331/IKEA-Hackant</a>
-4. <a name="4">https://github.com/diodenschein/TableMem</a>
-5. <a name="5">https://en.wikipedia.org/wiki/Local_Interconnect_Network</a>
+1. <a name="1">https://github.com/ivanwick/bekantfirmware</a>
+2. <a name="2">https://web.archive.org/web/20190116092248/https://blog.rnix.de/hacking-ikea-bekant/</a>
+3. <a name="3">https://github.com/trainman419/bekant</a>
+4. <a name="4">https://github.com/robin7331/IKEA-Hackant</a>
+5. <a name="5">https://github.com/diodenschein/TableMem</a>
+6. <a name="5">https://en.wikipedia.org/wiki/Local_Interconnect_Network</a>
