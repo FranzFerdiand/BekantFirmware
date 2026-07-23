@@ -1,26 +1,6 @@
-# IMPORTANT
+# BEKANT Firmware with standing/sitting memory positions
 
-Analysis of the original OEM firmware (disassembly and rebuild in C) was done
-using the MiniMax-M3 LLM and this result is as yet COMPLETELY untested, while
-I am waiting for the PIC programmer.
-
-If you want to give it a try, clear the path of the desk and be ready to cut
-power in case of a malfunction.
-
-**- USE - AT - YOUR - OWN - RISK -**
-
-## TODOs
-
-* get PICkit3 programmer
-* document flashing using:
-  * [pk2cmd](https://github.com/jaka-fi/pk2cmd)
-  * ipecmd.jar from [MPLAB X v6.20](https://www.microchip.com/en-us/tools-resources/archives/mplab-ecosystem) using IPE + 8-bit MCUs installation only
-* note: the [MPLAB Tools for VS Code](https://onlinedocs.microchip.com/oxy/GUID-5A81D6E3-6746-4021-B894-F920D260854C-en-US-3/index.html) do not support legacy PICkit 3 (they require PICkit 5 or [MPLAB SNAP](https://www.microchip.com/en-us/development-tool/pg164100))
-
-
-# BEKANT Firmware
-
-![Position memory diagram](https://github.com/ivanwick/bekantfirmware/wiki/images/diagram.png)
+![Position memory diagram](docs/diagram_white_bg.png)
 
 Control firmware for IKEA BEKANT adjustable-height desk with lower and
 upper memory positions. Can be flashed onto the OEM controller,
@@ -29,7 +9,41 @@ without changing any hardware.
 Pre-program a sitting and standing position for your desk and move
 between them with a single button press.
 
+All you need is a PICkit 3 programmer (available on Aliexpress for little more
+than 10 €/USD + shipment) and some patience when forcing open the plastic
+case of the controller box.
+
+**IMPORTANT:** see the [Disclaimer](#disclaimer) below.
+
+## Button overview
+
+| Button              | Action                                 |
+| ------------------- | -------------------------------------- |
+| hold `△`            | move the desk up                       |
+| hold `▽`            | move the desk down                     |
+| hold `▽+△` for 3s   | save position (auto-selected)          |
+| hold `▽+△` for 10s  | factory reset (keep pressed after 3s!) |
+| press `△△` or `△+▽` | move to upper (standing) position      |
+| press `▽▽` or `▽+△` | move to lower (sitting) position       |
+
+Press a button during a memory move to cancel it (desk stops moving).
+
+## Open issues
+
+Some glitches still remain, mainly:
+
+- resetting does not work as expected yet
+- storing the upper/lower position should be more intuitive
+- after resetting motors once got out of sync (I had to erase + re-program)
+
 ## About this fork
+
+Analysis of the original OEM firmware (disassembly and rebuild in C) was done
+using the MiniMax-M3 LLM, followed by a cleanup session using Claude Opus 4.8.
+
+First live tests still had some major issues, but were resolve using the Kimi
+K3 LLM. After this, manual operation, storing (to be improved) and positioning
+(both by double-clicking △△ or ▽▽ and sequence-clicking △+▽ or ▽+△) do work.
 
 The original release at
 [ivanwick/bekantfirmware](https://github.com/ivanwick/bekantfirmware)
@@ -39,29 +53,21 @@ fork changes the gesture you use to invoke a memory position.
 
 This project:
 
-1. **Supports both gesture styles at the same time.** You can use
-   the ivanwick "combo-press" (hold one button, tap the other),
-   the DieSteinhose "double-tap", or mix and match. The unified
-   state machine in `btn/btn.c` *appears* to handle both. (Not
-   yet tested on hardware.)
-2. **Implements a 10-second factory-reset** by holding both
-   buttons. Distinct from the existing 3-second save gesture
-   (which saves the current position) the 10-second hold writes
-   the OEM endstop defaults to EEPROM. The two gestures share
-   one counter using a *stacked-threshold* state machine, so
-   a 10-second hold fires both events (SAVE at 3 s, FACTORY_RESET
-   at 10 s). See [USAGE.md](USAGE.md) for the user-facing
-   documentation and the test-scenarios table.
-3. **Includes a best-effort C reconstruction** of what we
-   believe to be the original IKEA firmware in
-   `oem_reconstruction/`, for future reference and as a
-   *tentative* attempt at the endstop behaviour described in
+1. **Supports both gesture styles at the same time.** You can use ivanwick's
+   "combo-press" (hold one button, tap the other) or DieSteinhose's "double-
+   tap". The unified state machine in `btn/btn.c` handles both.
+2. **Implements a 10-second factory-reset** by holding both buttons. Distinct
+   from the existing 3-second save gesture (which saves the current position)
+   the 10-second hold writes the OEM endstop defaults to EEPROM. The two
+   gestures share one counter using a *stacked-threshold* state machine, so
+   a 10-second hold fires both events (SAVE at 3 s, FACTORY_RESET at 10 s).
+3. **Includes a best-effort C reconstruction** of the original IKEA firmware
+   in `oem_reconstruction/`, for future reference and as a *tentative* attempt
+   at the endstop behaviour described in
    [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4).
-   See the [Disclaimer](#disclaimer) below — none of this has
-   been verified on a real BEKANT controller.
 
-The rest of the source is mostly identical to the ivanwick
-project (the original release), with these additions / fixes:
+The rest of the source is mostly identical to ivanwick's original project,
+with these additions / fixes:
 
 - **`btn/`** rewritten to support both gesture styles at the
   same time, plus the stacked 3 s/10 s thresholds for save /
@@ -76,7 +82,7 @@ project (the original release), with these additions / fixes:
   from the main loop — performs the writes (with `CLRWDT()`
   in the ~5 ms/byte busy-wait), so the Timer4 LIN scheduler
   keeps running during save / factory-reset.
-- **`bekant/bctrl.{c,h}`** uses the ivanwick BCMD values
+- **`bekant/bctrl.{c,h}`** uses ivanwick's BCMD values
   (0x86 up / 0x85 down / 0xfc stop / …), which are proven on
   hardware — the desk moves in both directions while a button
   is held.  The OEM bytes recovered from the disassembly
@@ -91,40 +97,31 @@ project (the original release), with these additions / fixes:
   qualifier — without it, XC8 free mode appears to dead-strip
   the function and the interrupt vector would stay empty.
 
-## Quick links
-
-- **[USAGE.md](USAGE.md)** — end-user docs: which buttons do what
-- **[docs/COMPARISON.md](docs/COMPARISON.md)** — how the two upstreams differ and how this project handles both
-- **[docs/TRACE.md](docs/TRACE.md)** — state-machine traces you can audit by hand
-- **[docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md)** — endstop / over-travel analysis (issue #4)
-- **[oem_reconstruction/](oem_reconstruction/)** — reconstructed C code of the original IKEA firmware, with the disassembly
-
 ## Project layout
 
 ```
 BekantFirmware/
 ├── README.md
-├── USAGE.md
 ├── docs/
 │   ├── COMPARISON.md
 │   ├── DELIVERABLE.md
 │   ├── ENDSTOP_ANALYSIS.md
 │   └── TRACE.md
-├── oem_reconstruction/                ← reverse-engineered reference impl
+├── oem_reconstruction/                  ← reverse-engineered reference impl
 │   ├── README.md
 │   ├── ANALYSIS.md
 │   ├── main.c / system.c / user.c / interrupts.c / configuration_bits.c
 │   ├── btn/ lin/ bekant/
-│   ├── bekant/endstop.c                ← recovered endstop detector
+│   ├── bekant/endstop.c                 ← recovered endstop detector
 │   ├── bekant/bcmd_table.c / bcmd_table.h / oem_tables.c
-│   ├── docs/                           ← STATE_MACHINE / ENCODER_TABLE / FACTORY_RESET
-│   └── disassembly/                    ← orginafirm.hex + .asm dumps
+│   ├── docs/                            ← STATE_MACHINE / ENCODER_TABLE / FACTORY_RESET
+│   └── disassembly/                     ← orginafirm.hex + .asm dumps
 └── src/
     ├── main.c
     ├── configuration_bits.c
     ├── system.c / system.h
     ├── user.c / user.h
-    ├── interrupts.c                    ← void __interrupt() isr(void) (the ISR fix)
+    ├── interrupts.c                     ← void __interrupt() isr(void) (the ISR fix)
     ├── Makefile
     ├── btn/btn.h                        ← INPUT_t enum, gesture documentation
     ├── btn/btn.c                        ← unified state machine; stacked 3 s/10 s thresholds
@@ -139,43 +136,25 @@ BekantFirmware/
 
 ## Building and uploading
 
-These instructions assume a Linux host, an MPLAB PICkit 3 (or 4)
-programmer, and a fresh out-of-the-box BEKANT controller that you
-are about to overwrite. **Flashing the firmware is irreversible
-without a backup of the original `.hex`**, so read the [disclaimer](#disclaimer)
-first.
+These instructions assume a macOS/Linux host, an PICkit 3 programmer, and a
+fresh out-of-the-box BEKANT controller that you are about to overwrite.
+
+**Flashing the firmware is irreversible without a backup of the original
+`.hex`**, so read the [disclaimer](#disclaimer) first.
 
 > **Before you start** — please read [Hardware variants & code protection](#hardware-variants--code-protection)
-> below. Newer BEKANT desks (manufactured 2019 or later) have code
-> protection enabled on the PIC, which means you cannot read the
-> original firmware back from the chip. If yours is a newer unit,
-> back up with a known-good dump instead (one is bundled in the
-> ivanwick project) and accept that you may not be able to roll
-> back to the OEM firmware.
-
-### 0. Disassemble the controller box
-
-The hardest part of the whole install is opening the controller
-box. IKEA has progressively welded the back plate with more
-ultrasonic spots to deter modifications like this one, so do not
-expect the case to come apart easily. Two excellent community
-guides for getting inside the metal case without destroying it:
-
-- YouTube walkthrough: <https://www.youtube.com/watch?v=jCPlM2KYwDQ>
-- iFixit teardown: <https://www.ifixit.com/Teardown/Ikea+Bekant+Controller+Teardown/142516>
-
-These were originally collected in
-[ivanwick/bekantfirmware issue #11](https://github.com/ivanwick/bekantfirmware/issues/11).
-
-Once the case is open, you'll see a small PCB with a 6-pin (2×3)
-ICSP header. The PIC16LF1938 is the largest IC on the board. Pin 1
-of the ICSP header is usually marked with a square pad or the
-number "1" on the silkscreen.
+> below. Newer BEKANT desks (manufactured 2019 or later) have code protection
+> enabled on the PIC, which means you cannot read the original firmware back
+> from the chip.
+>
+> If yours is a newer unit, back up with a known-good dump or release instead
+> (the hex release from ivanwick's project, or the backup contributed by
+> another user) and accept that you may not be able to roll back to the OEM
+> firmware.
 
 ### 1. Get the toolchain
 
-You need Microchip's XC8 C compiler. The free mode is fine — it
-optimises less than the PRO mode but produces working code.
+You need Microchip's XC8 C compiler (the free one is fine):
 
 - Download XC8: <https://www.microchip.com/mplab/compilers>
 
@@ -185,43 +164,154 @@ Confirm installation works (`xc8-cc` should be added to the PATH during installa
 xc8-cc --version
 ```
 
-### 2. Build with make
+### 2. Build the new firmware
+
+Make sure you have GNU Make installed. It should come with most/all Linux
+distros (otherwise search for the specific `make` package and install it),
+while on macOS you might need to install in one of two ways:
+
+1. Xcode Command Line Tools: ```xcode-select --install```
+2. Homebrew: ```brew install make```
+
+Then you should be able to simply run:
 
 ```sh
 make
 ```
 
-The build produces `dist/bekantfirmware.elf`
-and `dist/bekantfirmware.hex`.
+The build should give you `dist/bekantfirmware.hex` (about 16 KB in size).
 
-### 3. Open the BEKANT controller
+### 3. Disassemble the BEKANT controller box
 
-The BEKANT controller is a small metal box attached to the desk
-frame, with two buttons on the front and a power cord at the back.
+The BEKANT controller is a small plastic box attached to the desk, with two
+buttons on the front and a power cord at the back.
 
-1. **Unplug the desk from mains.** Capacitors inside the controller
-   hold enough charge to damage your programmer and the PIC.
-2. Open the controller enclosure. See
-   [step 0 above](#0-disassemble-the-controller-box) for guides —
-   the case is **ultrasonically welded** on newer units and you may
-   need to cut or pry the welds to get it open. Do not expect this
-   to be reversible; the box will not sit as flat when you put it
-   back together.
+1. **Unplug the desk from mains.** Capacitors inside the controller hold
+   enough charge to damage your programmer and the PIC, so after unplugging
+   the desk press the up/down buttons to fully discharge them.
+2. Now open the controller enclosure. IKEA has welded the plastic back plate,
+   so do not expect the case to come apart easily. Two excellent community
+   guides for getting inside the case without destroying it were originally
+   collected in [ivanwick/bekantfirmware issue #11](https://github.com/ivanwick/bekantfirmware/issues/11)
+   - YouTube walkthrough: <https://www.youtube.com/watch?v=jCPlM2KYwDQ>
+   - iFixit teardown: <https://www.ifixit.com/Teardown/Ikea+Bekant+Controller+Teardown/142516>
 3. Locate the **ICSP header** on the PCB — a 6-pin (2×3) header
-   labelled `ICSP`, `PICKIT`, or similar. The ivanwick project's
+   labelled `ICSP`, `PICKIT`, or similar. The original project's
    [Installation Guide](https://github.com/ivanwick/bekantfirmware/wiki/Installation-Guide)
    has photos of the header location.
-4. Plug your PICkit 3 / 4 into the ICSP header. The arrow / notch
+4. Plug your PICkit programmer into the ICSP header. The arrow / notch
    on the PICkit connector indicates pin 1 — match it to the
    silkscreen on the PCB (pin 1 is usually marked with a square pad
-   or a "1").
+   or a "1" see ivanwick's [picture](https://github.com/ivanwick/bekantfirmware/wiki/images/pickit3.jpg).
 5. **Check the date code** on the white sticker on the surface that
    touches the underside of the desk. It's formatted like
    `2017/34` (year / week of year). See the
    [Hardware variants](#hardware-variants--code-protection) section
    below for what to do with that information.
 
-### 4. Back up the original firmware (strongly recommended, with caveats)
+### 4. Setting up the programmer
+
+#### 4.1 Limitations
+Legacy PICkit's are no longer actively supported by Microchip Technology Inc.
+meaning you would not be able to use current versions of either
+
+- [MPLAB X IDE](https://www.microchip.com/en-us/tools-resources/develop/mplab-x-ide)
+- [MPLAB Tools for VS Code](https://www.microchip.com/en-us/tools-resources/develop/mplab-tools-vs-code)
+
+Older versions of the *MPLAB X IDE* might not run on current operating systems
+as macOS 26, and one would need a much more expensive *PICkit 5* or *MPLAB SNAP*
+in order to use these tools today.
+
+Fortunately enough, there are free tools available for the older and cheaper
+PICkit programmer that still work (at least mid-2026).
+
+I will give examples for both options in later sections.
+
+#### 4.2 Option 1: jpecmd.jar from MPLAB X v6.20 (for PICkit 3 / 4 / 5)
+Use *jpecmd.jar* provided by Microchip by installing the retired/archived
+[MPLAB X v6.20](https://www.microchip.com/en-us/tools-resources/archives/mplab-ecosystem).
+
+You might want to create an *ipecmd* alias, as this is what I'll use in the
+examples below. Here are setup instructions for macOS 26 (you'll need to have
+MPLAB X v6.20 already installed):
+
+```sh
+# set one of 3, 4 or 5
+PICKIT_VERSION=3
+PIC_SELECTOR=16LF1938
+
+MPLAB_JRE_JAVA=`find /Applications/microchip/mplabx/v6.20 -name java -type file`
+MPLAB_IPECMD_JAR=`find /Applications/microchip/mplabx/v6.20 -name ipecmd.jar -type file`
+
+echo "alias ipecmd='${MPLAB_JRE_JAVA} -jar ${MPLAB_IPECMD_JAR} -P${PIC_SELECTOR} -TPPK${PICKIT_VERSION} -W'" >> ~/.zshrc
+alias ipecmd='${MPLAB_JRE_JAVA} -jar ${MPLAB_IPECMD_JAR} -P${PIC_SELECTOR} -TPPK${PICKIT_VERSION} -W'
+```
+
+Now test it by running a blank check using *ipecmd*:
+
+```sh
+ipecmd -C
+```
+
+Expect the output to look something like this:
+
+```text
+DFP Version Used : PIC12-16F1xxx_DFP,1.9.258,Microchip
+*****************************************************
+Connecting to MPLAB PICkit 3...
+Currently loaded firmware on PICkit 3
+Firmware Suite Version.....01.56.09
+Firmware type..............Enhanced Midrange
+Programmer to target power is enabled - VDD = 3,250000 volts.
+Target device PIC16LF1938 found.
+Device Revision ID = 3
+Blank Checking...
+program memory
+Address: 0 Expected Value: 3fff Received Value: 3180
+Blank check complete, device is not blank.
+PICkit 3 removed
+```
+
+#### 4.3 Option 2: pk2cmd and PICkitminus (for PICkit 2 / 3)
+In order to be able to use the [pk2cmd](https://github.com/jaka-fi/pk2cmd)
+command line tool, you might need to downgrade your PICkit's firmware from
+"MPLAB mode" it was delivered with to the "scripting firmware" using the
+[PICkitminus](https://github.com/jaka-fi/PICkitminus) GUI software suite
+which runs on Linux and Windows only. Unfortunately there is no macOS release,
+but only need it once (or twice for resetting back to MPLAB mode).
+
+The *pk2cmd* command line tool meanwhile is available for all OS'es. Make it
+available somehow for ease of access - here is an alias variant for macOS:
+
+```sh
+PK2CMD_EXECUTABLE=~/Downloads/pk2cmd_1_27_01/pk2cmd
+
+echo "alias pk2cmd='~/Downloads/pk2cmd_1_27_01/pk2cmd -PPIC16LF1938'" >> ~/.zshrc
+alias pk2cmd='~/Downloads/pk2cmd_1_27_01/pk2cmd -PPIC16LF1938'
+```
+
+Now test it by running *pk2cmd* from the local folder:
+
+```sh
+pk2cmd -I
+```
+
+Expect the output to look something like this:
+
+```text
+Auto-Detect: Found part PIC16LF1938.
+
+Device ID = 24A0
+Revision  = 0003
+Device Name = PIC16LF1938
+
+Operation Succeeded
+```
+
+... and if you see some about "MPLAB mode", well then you still need to
+downgrade the programmers firmware using *PICkitminus*.
+
+### 5. Back up the original firmware (strongly recommended, with caveats)
 
 > **Read [Hardware variants](#hardware-variants--code-protection)
 > first.** On desks manufactured 2019 or later the PIC is code-protected
@@ -233,21 +323,22 @@ before 2019), read the original PIC's flash and EEPROM and save
 the `.hex` file before you write anything:
 
 ```sh
-# In MPLAB X IDE: Production → Read Device Memory → Save...
-# Or from the command line with pk3cmd (if installed):
-pk3cmd -P PIC16LF1938 -J HEX -F firmware-backup.hex -M
+# Option 1: ipecmd.jar
+ipecmd -GF"bekantfirmware-backup.hex"
+# Option 2: pk2cmd
+pk2cmd -GF bekantfirmware-backup.hex
 ```
 
-Verify the backup is real (not all zeros) by checking the file
+Now verify the backup is real (not all zeros) by checking the file
 size and contents:
 
 ```sh
 # A real firmware dump is ~94 KB. A code-protected dump is 0 bytes
 # or all 0x00 / 0xFF.
-ls -l firmware-backup.hex
+ls -l bekantfirmware-backup.hex
 # Read the first 16 bytes; for a real dump you should see a mix of
 # non-zero values that look like Intel HEX records.
-head -3 firmware-backup.hex
+head -3 bekantfirmware-backup.hex
 ```
 
 If your backup is all zeros, your PIC is code-protected. Use the
@@ -257,23 +348,30 @@ instead — see
 [Hardware variants](#hardware-variants--code-protection) for the
 caveats.
 
-The reference dump was posted by user `WantedLange` in
-[ivanwick/bekantfirmware issue #2 comment 1013637468](https://github.com/ivanwick/bekantfirmware/issues/2#issuecomment-1013637468)
-("This is NOT verified or tested, but its the read from my original
-firmware"). It is from a pre-2019 unit and was confirmed to work by
-user `iLLiac4` in the following comment
-([#2 comment 1013638297](https://github.com/ivanwick/bekantfirmware/issues/2#issuecomment-1013638297):
-"Great TNX. It works.").
+### 6. Flash the new firmware
 
-### 5. Flash the new firmware
+You might want/need to erase the PIC16LF1938 on newer (post-2019) models of
+the Bekant desk to disable the code protection:
 
 ```sh
-pk3cmd -P PIC16LF1938 -F dist/bekantfirmware.hex -M -Y
+# Option 1: ipecmd.jar
+ipecmd -E
+# Option 2: pk2cmd
+pk2cmd -E
 ```
 
-### 6. Restore the EEPROM defaults (optional)
+Now you can load the new firmware to the PIC16LF1938:
 
-The ivanwick project's firmware stores the memory positions in the
+```sh
+# Option 1: ipecmd.jar
+ipecmd -F"dist/bekantfirmware.hex" -M -Y -OL
+# Option 2: pk2cmd
+pk2cmd -F dist/bekantfirmware.hex -M -Y
+```
+
+### 7. Restore the EEPROM defaults (optional)
+
+Ivanwick's project firmware stores the memory positions in the
 PIC's EEPROM at offsets `0x00` and `0x02`, with defaults
 `0x0636` and `0x1600`. If you flashed a fresh unit, these defaults
 are already correct. If you reprogrammed a unit that already had
@@ -290,15 +388,16 @@ for 3 s to save:
 **Factory reset** — hold both buttons for the full 10 seconds.
 The save gesture fires at 3 s, then the factory-reset fires at
 10 s and overwrites both memory slots with the OEM endstop values
-(0x0021 / 0x01d2). See [USAGE.md](USAGE.md) for the full button
-reference.
+(0x0021 / 0x01d2).
 
-### 7. Close the controller and test
+### 8. Close the controller and test
 
-1. Reassemble the controller enclosure.
-2. Plug the desk back into mains.
-3. Test the basic motion (hold `△` / `▽`).
-4. Test the memory position — see [USAGE.md](USAGE.md).
+1. Unplug the programmer (USB cable)
+2. Remove the programmer from the board
+3. Reassemble the controller enclosure.
+4. Plug the desk back into mains.
+5. Test the basic motion (hold `△` / `▽`).
+6. Test the memory positions
 
 ### Troubleshooting
 
@@ -335,10 +434,8 @@ The controller case is ultrasonically welded. IKEA has progressively
 added more weld spots to deter modifications. Newer units (2019+)
 have noticeably more welds and may require cutting or prying to
 get the back plate off. The damage is cosmetic and the case still
-holds together when you put it back. See the disassembly guides
-linked in [step 0](#0-disassemble-the-controller-box) above and
-the discussion in
-[ivanwick/bekantfirmware issue #11](https://github.com/ivanwick/bekantfirmware/issues/11).
+holds together when you put it back. See the disassembly section
+above.
 
 ### Code protection on newer units
 
@@ -369,12 +466,8 @@ specific unit.
 
 To flash a code-protected unit, you must temporarily erase the
 chip (which clears the CP bit along with the firmware). After
-erasing, you can write the new firmware normally:
-
-```sh
-pk3cmd -P PIC16LF1938 -E  # erase
-pk3cmd -P PIC16LF1938 -F dist/bekantfirmware.hex -M -Y
-```
+erasing, you can write the new firmware normally (see instructions
+above).
 
 ### Reference firmware dump for code-protected units
 
@@ -408,12 +501,35 @@ bundled with this project too — see
 In short: **treat the reference dump as a recovery option, not a
 guaranteed rollback**.
 
+## Disclaimer
+
+**- USE - AT - YOUR - OWN - RISK -**
+
+The original IKEA BEKANT firmware does not expose memory positions for safety
+and liability reasons. The project by ivanwick preserves a small part of the
+human-in-the-loop requirement as any button press cancels an automatic move
+(a power cut will obviously do fine too). This fork sticks to the same pattern.
+
+Whatever you do, keep in mind, that something could still go wrong in your
+specific case. Therefor:
+
+- Keep the desk's path clear during all movement.
+- Stay near the controller while a memory move is in progress, so you can
+  cancel by pressing any button or by plugging the main power cord.
+- The firmware *is intended to* drop the relay when the desk reaches the
+  physical endstop, so the motor cannot stall indefinitely. (This is
+  implemented in `src/bekant/endstop.c` via a separate endstop-detector
+  module, hopefully fixing the bug described in
+  [ivanwick issue #4](https://github.com/ivanwick/bekantfirmware/issues/4).
+
+**- USE - AT - YOUR - OWN - RISK -**
+
 ## See also
 
-- [USAGE.md](USAGE.md) — button reference
 - [docs/COMPARISON.md](docs/COMPARISON.md) — ivanwick vs DieSteinhose
 - [docs/TRACE.md](docs/TRACE.md) — state-machine traces
 - [docs/ENDSTOP_ANALYSIS.md](docs/ENDSTOP_ANALYSIS.md) — endstop fix analysis
+- [oem_reconstruction/](oem_reconstruction/) — reconstructed C code
 
 ## References
 
@@ -422,15 +538,3 @@ guaranteed rollback**.
 3. <a name="3">https://github.com/robin7331/IKEA-Hackant</a>
 4. <a name="4">https://github.com/diodenschein/TableMem</a>
 5. <a name="5">https://en.wikipedia.org/wiki/Local_Interconnect_Network</a>
-
-## Disclaimer
-
-Use at your own risk. The original IKEA BEKANT firmware does not
-expose memory positions for safety and liability reasons. The
-ivanwick project preserves a human-in-the-loop requirement: any
-button press or power cut cancels an automatic move. This project
-follows the same pattern.
-
-Position memory is convenient but assumes you have verified the
-saved height is safe. Ensure the desk's path is clear during all
-movement.
