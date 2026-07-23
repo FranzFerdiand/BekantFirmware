@@ -28,14 +28,6 @@ Press a button during a memory move to cancel it (desk stops moving).
 
 ![Position memory diagram](docs/diagram_white_bg.png)
 
-## Open issues
-
-Some glitches still remain, mainly:
-
-- resetting does not work as expected yet
-- storing the upper/lower position should be more intuitive
-- after resetting motors once got out of sync (I had to erase + re-program)
-
 ## About this fork
 
 Analysis of the original OEM firmware (disassembly and rebuild in C) was done
@@ -97,7 +89,16 @@ with these additions / fixes:
   qualifier — without it, XC8 free mode appears to dead-strip
   the function and the interrupt vector would stay empty.
 
-## Project layout
+### Open issues
+
+Some glitches still remain, mainly:
+
+- resetting does not work as expected yet
+- storing the upper/lower position should be more intuitive
+- at one point motors got out of sync (I had to erase + re-program, but was
+  not able to reproduce the case and it happened only once)
+
+### Project layout
 
 ```
 BekantFirmware/
@@ -105,6 +106,7 @@ BekantFirmware/
 ├── docs/
 │   ├── COMPARISON.md
 │   ├── DELIVERABLE.md
+│   ├── diagram_white_bg.png
 │   ├── ENDSTOP_ANALYSIS.md
 │   └── TRACE.md
 ├── oem_reconstruction/                  ← reverse-engineered reference impl
