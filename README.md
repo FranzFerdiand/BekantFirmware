@@ -13,20 +13,46 @@ case of the controller box.
 
 **IMPORTANT:** see the [Disclaimer](#disclaimer) below.
 
+![Position memory diagram](docs/diagram_white_bg.png)
+
 ## Button overview
 
-| Button              | Action                                 |
-| ------------------- | -------------------------------------- |
-| hold `△`            | move the desk up                       |
-| hold `▽`            | move the desk down                     |
-| hold `▽+△` for 3s   | save position (auto-selected)          |
-| hold `▽+△` for 8s   | factory reset (keep pressed after 3s!) |
-| press `△△` or `△+▽` | move to upper (standing) position      |
-| press `▽▽` or `▽+△` | move to lower (sitting) position       |
+| Button              | Action                                      |
+| ------------------- | ------------------------------------------- |
+| hold `△`            | move the desk up                            |
+| hold `▽`            | move the desk down                          |
+| hold `▽+△` for 3s   | save current position (auto-selected)       |
+| hold `▽+△` for 8s   | factory reset (just keep pressed after 3s!) |
+| press `△△` or `△+▽` | move to upper (standing) position           |
+| press `▽▽` or `▽+△` | move to lower (sitting) position            |
 
 Press a button during a memory move to cancel it (desk stops moving).
 
-![Position memory diagram](docs/diagram_white_bg.png)
+## (Re-)setting memory positions
+
+After initial programming (or after each reset) the upper and lower memory
+positions will be cleared (rather set to 0xffff), while the end-stop positions
+(physical limits to where the motors may move the table) will be set to the
+values retrieved given by the OEM firmware:
+
+|  Address  |  Value   |  Role                                           |
+| --------- | -------- | ----------------------------------------------- |
+|  0x00     |  0x0021  |  OEM_BOTTOM_ENDSTOP — physical bottom end-stop  |
+|  0x02     |  0xffff  |  OEM_LOW_MEMORY — lower memory target           |
+|  0x04     |  0xffff  |  OEM_HIGH_MEMORY — upper memory target          |
+|  0x06     |  0x01d2  |  OEM_TOP_ENDSTOP — physical top end-stop        |
+
+At this point no memory re-call (move to upper/lower position) will work.
+
+As soon as you save your first position, each re-call (upper or lower) will
+move the table to that position (both stores will be set to the same value.
+
+As soon as you save your second position, it will go into the upper or lower
+memory position depending on whether the new position was bigger/smaller than
+the one before.
+
+Each consecutive save operation will store at the memory-slot which is closer
+to the current postion, making the whole operation quite intuitive.
 
 ## About this fork
 
@@ -95,11 +121,10 @@ with these additions / fixes:
 
 ### Open issues
 
-Some glitches still remain, mainly:
-
-- at one point only one leg was moving (I had to erase + re-program, but was
-  not able to reproduce the case and it happened only once, possibly after a
-  reset). Keep an eye on it.
+At one point only one leg was moving (I had to erase + re-program, but was
+not able to reproduce the case and it happened only once, possibly after a
+reset). But meanwhile there different modifications that could have fixed
+this unintentionally. Keeping an eye on it.
 
 ### Project layout
 
@@ -486,7 +511,15 @@ recalling a memory position:
 | ----- | ------------------------ | -------------------------------------------- | ------------------------------------ |
 | **0** | `low = 0`, `high = 0` (fresh or post-reset) | Populates **both** slots with the new value. | Both buttons are ignored until the first save. |
 | **1** | `low = high = X` (one position) | Smaller-than-stored → LOW slot; larger-or-equal → HIGH slot. Low and high then differ, advancing to Stage 2. | Either button drives the desk toward `X` from whichever side it is on. |
-| **2** | `low < high` (two distinct positions) | Closer-to-the-smaller → LOW (incl. when save < both). Closer-to-the-bigger → HIGH (incl. when save > both). | MEM_UP drives to `high` (only from below); MEM_DOWN drives to `low` (only from above). |
+| **2** | `low < high` (two distinct positions) | Closer-to-the-smaller → LOW (incl. when save < both). Closer-to-the-bigger → HIGH (incl. when save > both). | MEM_UP drives to `high`; MEM_DOWN drives to `low`. **Either button works from any starting position** — the desk converges on the target from above or below. |
+
+The buttons always accept in Stages 1 and 2; the press declares an
+intent ("go to upper" / "go to lower") and the firmware chooses
+the driving direction so the desk always lands on the recalled
+position. The MEM_* state's stop check uses the requested target
+(rather than the default `high_pos`/`low_pos`), which is what
+lets the same state drive up *or* down depending on where the
+desk started.
 
 Stage 0 is the state after a chip erase or a 10-s factory-reset
 (both EEPROM slots read `0xFFFF`, which `bui_init()` turns into

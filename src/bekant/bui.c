@@ -62,6 +62,39 @@ void bui_factory_reset(void);
 static volatile int16_t pending_save_pos = -1;
 static volatile bool pending_factory_reset = false;
 
+/* Stop position for an in-progress MEM_* recall.  Set by recall_memory()
+ * (called from bui_input() in the Timer2 ISR) and read by bui_set_pos()
+ * (called from bctrl_timer in the Timer4 ISR).  When cur_pos is on
+ * the "wrong" side of the requested target, recall_memory() inverts
+ * the driving direction so the desk converges on the target from
+ * above instead of being unable to fire; bui_set_pos() still stops
+ * when cur_pos reaches mem_target.
+ *
+ * Plain (non-volatile) is safe: the two ISRs share the single PIC16
+ * interrupt vector and never preempt each other. */
+static int16_t mem_target;
+
+/* Start a memory recall moving toward `target`.  The desk converges
+ * on `target` from either side: drives UP if cur_pos < target,
+ * drives DOWN if cur_pos > target, no movement if already there.
+ *
+ * No-op if the chip is still in fresh state (low_pos == 0 && high_pos == 0) —
+ * there is no memory to recall. */
+static void recall_memory(int16_t target) {
+    if (low_pos == 0 && high_pos == 0) {
+        return;
+    }
+    mem_target = target;
+    if (cur_pos < target) {
+        bui_state = BUI_MEM_UP;
+        bctrl_set_target(BCTRL_UP);
+    } else if (cur_pos > target) {
+        bui_state = BUI_MEM_DOWN;
+        bctrl_set_target(BCTRL_DOWN);
+    }
+    /* cur_pos == target: at target, no-op. */
+}
+
 /**
  * Initialize from stored position values.
  *
@@ -98,34 +131,11 @@ void bui_input(INPUT_t input) {
                 bui_state = BUI_DOWN;
                 bctrl_set_target(BCTRL_DOWN);
             } else if (input == INPUT_MEM_UP || input == INPUT_MEM_DOWN) {
-                /* Memory recall — three explicit stages:
-                 *   Stage 0 (fresh, both slots == 0)         ignore
-                 *   Stage 1 (one memory, both slots equal)   drive toward it
-                 *   Stage 2 (two distinct memories)          standard checks
-                 */
-                if (low_pos == 0 && high_pos == 0) {
-                    /* Stage 0: nothing to recall. */
-                } else if (low_pos == high_pos) {
-                    /* Stage 1: single memory. Either MEM button
-                     * drives the desk toward low_pos == high_pos
-                     * from whichever side the desk is on. */
-                    if (cur_pos < low_pos) {
-                        bui_state = BUI_MEM_UP;
-                        bctrl_set_target(BCTRL_UP);
-                    } else if (cur_pos > low_pos) {
-                        bui_state = BUI_MEM_DOWN;
-                        bctrl_set_target(BCTRL_DOWN);
-                    }
-                    /* cur_pos == low_pos → already at target, no-op. */
-                } else if (input == INPUT_MEM_UP && cur_pos < high_pos) {
-                    /* Stage 2: standard MEM_UP. */
-                    bui_state = BUI_MEM_UP;
-                    bctrl_set_target(BCTRL_UP);
-                } else if (input == INPUT_MEM_DOWN && cur_pos > low_pos) {
-                    /* Stage 2: standard MEM_DOWN. */
-                    bui_state = BUI_MEM_DOWN;
-                    bctrl_set_target(BCTRL_DOWN);
-                }
+                /* Always-accept memory recall: the press declares an
+                 * intent (go to upper / lower), and recall_memory()
+                 * chooses the direction so the desk converges on the
+                 * target from any starting position. */
+                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
             } else if (input == INPUT_SAVE) {
                 /* Defer the EEPROM write to bui_service() (mainline). */
                 pending_save_pos = cur_pos;
@@ -135,8 +145,8 @@ void bui_input(INPUT_t input) {
             break;
 
         case BUI_UP:
-            if (input == INPUT_MEM_UP && cur_pos < high_pos) {
-                bui_state = BUI_MEM_UP;
+            if (input == INPUT_MEM_UP || input == INPUT_MEM_DOWN) {
+                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
             } else if (input == INPUT_IDLE) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
@@ -147,8 +157,8 @@ void bui_input(INPUT_t input) {
             break;
 
         case BUI_DOWN:
-            if (input == INPUT_MEM_DOWN && cur_pos > low_pos) {
-                bui_state = BUI_MEM_DOWN;
+            if (input == INPUT_MEM_DOWN || input == INPUT_MEM_UP) {
+                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
             } else if (input == INPUT_IDLE) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
@@ -159,7 +169,10 @@ void bui_input(INPUT_t input) {
             break;
 
         case BUI_MEM_UP:
-            if (input == INPUT_UP) {
+            if (input == INPUT_MEM_DOWN) {
+                /* Switch mid-recall to the lower target. */
+                recall_memory(low_pos);
+            } else if (input == INPUT_UP) {
                 bui_state = BUI_UP;
             } else if (input == INPUT_DOWN) {
                 bui_state = BUI_DOWN;
@@ -168,7 +181,10 @@ void bui_input(INPUT_t input) {
             break;
 
         case BUI_MEM_DOWN:
-            if (input == INPUT_UP) {
+            if (input == INPUT_MEM_UP) {
+                /* Switch mid-recall to the upper target. */
+                recall_memory(high_pos);
+            } else if (input == INPUT_UP) {
                 bui_state = BUI_UP;
                 bctrl_set_target(BCTRL_UP); // switch directions
             } else if (input == INPUT_DOWN) {
@@ -189,13 +205,16 @@ void bui_set_pos(int16_t pos) {
     cur_pos = pos;
     switch (bui_state) {
         case BUI_MEM_UP:
-            if (cur_pos >= high_pos) {
+            /* Stop when the desk reaches the recall target.  The target
+             * is set by recall_memory() so this works regardless of
+             * whether we arrived from above or below. */
+            if (cur_pos >= mem_target) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
             }
             break;
         case BUI_MEM_DOWN:
-            if (cur_pos <= low_pos) {
+            if (cur_pos <= mem_target) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
             }
