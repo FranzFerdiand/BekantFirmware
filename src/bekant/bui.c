@@ -5,6 +5,7 @@
 #include "bui.h"
 #include "bctrl.h"
 #include "eeprom_defaults.h"
+#include "radiator_config.h"
 #include <stdlib.h> // abs()
 #include <stdbool.h>
 
@@ -116,6 +117,12 @@ static void recall_memory(int16_t target) {
     if (low_pos == 0 && high_pos == 0) {
         return;
     }
+
+    // Hard lower bound (radiator collision protection)
+    if (target < RADIATOR_MIN_POS) {
+        target = RADIATOR_MIN_POS;
+    }
+
     int16_t diff = cur_pos - target;
     if (diff >= -TARGET_DEADBAND && diff <= TARGET_DEADBAND) {
         /* Already at the target (within deadband).  Don't update
@@ -123,6 +130,12 @@ static void recall_memory(int16_t target) {
          * a *different* MEM button still reads the fresh cur_pos. */
         return;
     }
+
+    if (diff > 0 && cur_pos <= (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+        // Prevent starting downward motion if already at or below safe limit
+        return;
+    }
+
     mem_target = target;
     mem_entry_pos = cur_pos;
     if (diff < 0) {
@@ -153,6 +166,14 @@ void bui_init(void) {
         /* Fresh chip — never written. */
         low_pos  = 0;
         high_pos = 0;
+    } else {
+        // Enforce radiator lower limit on stored positions
+        if (low_pos > 0 && low_pos < RADIATOR_MIN_POS) {
+            low_pos = RADIATOR_MIN_POS;
+        }
+        if (high_pos > 0 && high_pos < RADIATOR_MIN_POS) {
+            high_pos = RADIATOR_MIN_POS;
+        }
     }
 }
 
@@ -167,14 +188,18 @@ void bui_input(INPUT_t input) {
                 bui_state = BUI_UP;
                 bctrl_set_target(BCTRL_UP);
             } else if (input == INPUT_DOWN) {
-                bui_state = BUI_DOWN;
-                bctrl_set_target(BCTRL_DOWN);
+                // Prevent starting DOWN if already at or below radiator limit
+                if (cur_pos > (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+                    bui_state = BUI_DOWN;
+                    bctrl_set_target(BCTRL_DOWN);
+                }
             } else if (input == INPUT_MEM_UP || input == INPUT_MEM_DOWN) {
                 /* Always-accept memory recall: the press declares an
                  * intent (go to upper / lower), and recall_memory()
                  * chooses the direction so the desk converges on the
                  * target from any starting position. */
-                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
+                int16_t target = (input == INPUT_MEM_UP) ? high_pos : low_pos;
+                recall_memory(target);
             } else if (input == INPUT_SAVE) {
                 /* Defer the EEPROM write to bui_service() (mainline). */
                 pending_save_pos = cur_pos;
@@ -185,19 +210,26 @@ void bui_input(INPUT_t input) {
 
         case BUI_UP:
             if (input == INPUT_MEM_UP || input == INPUT_MEM_DOWN) {
-                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
+                int16_t target = (input == INPUT_MEM_UP) ? high_pos : low_pos;
+                recall_memory(target);
             } else if (input == INPUT_IDLE) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
             } else if (input == INPUT_DOWN) {
-                bui_state = BUI_DOWN;
-                bctrl_set_target(BCTRL_DOWN);
+                if (cur_pos > (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+                    bui_state = BUI_DOWN;
+                    bctrl_set_target(BCTRL_DOWN);
+                } else {
+                    bui_state = BUI_STOP;
+                    bctrl_set_target(BCTRL_STOP);
+                }
             }
             break;
 
         case BUI_DOWN:
             if (input == INPUT_MEM_DOWN || input == INPUT_MEM_UP) {
-                recall_memory((input == INPUT_MEM_UP) ? high_pos : low_pos);
+                int16_t target = (input == INPUT_MEM_UP) ? high_pos : low_pos;
+                recall_memory(target);
             } else if (input == INPUT_IDLE) {
                 bui_state = BUI_STOP;
                 bctrl_set_target(BCTRL_STOP);
@@ -214,8 +246,13 @@ void bui_input(INPUT_t input) {
             } else if (input == INPUT_UP) {
                 bui_state = BUI_UP;
             } else if (input == INPUT_DOWN) {
-                bui_state = BUI_DOWN;
-                bctrl_set_target(BCTRL_DOWN); // switch directions
+                if (cur_pos > (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+                    bui_state = BUI_DOWN;
+                    bctrl_set_target(BCTRL_DOWN); // switch directions
+                } else {
+                    bui_state = BUI_STOP;
+                    bctrl_set_target(BCTRL_STOP);
+                }
             }
             break;
 
@@ -242,6 +279,15 @@ void bui_input(INPUT_t input) {
  */
 void bui_set_pos(int16_t pos) {
     cur_pos = pos;
+
+    // Hard radiator collision limit: check if moving downwards (manual or memory)
+    if ((bui_state == BUI_DOWN || bui_state == BUI_MEM_DOWN) &&
+        cur_pos <= (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+        bui_state = BUI_STOP;
+        bctrl_set_target(BCTRL_STOP);
+        return;
+    }
+
     switch (bui_state) {
         case BUI_MEM_UP: {
             /* Fire STOP this far short of `mem_target`.  The estimate
@@ -327,6 +373,11 @@ void bui_save_pos(int16_t save_pos) {
         return;
     }
 
+    // Do not allow saving positions lower than radiator limit
+    if (save_pos < RADIATOR_MIN_POS) {
+        save_pos = RADIATOR_MIN_POS;
+    }
+
     if (low_pos == 0 && high_pos == 0) {
         /* Stage 0 -> Stage 1: first save populates both slots with
          * the same value. */
@@ -368,7 +419,7 @@ void bui_save_pos(int16_t save_pos) {
  * from mainline by bui_service().  Clears all four EEPROM position
  * slots to 0xFFFF and forces the in-memory low_pos / high_pos to
  * (0, 0), so the next INPUT_SAVE populates both slots per the
- * fresh-chip save rule in `bui_save_pos`.
+ * fresh-chip save rule in `bui_save_pos``.
  *
  * Sequence:
  *   1. eeprom_factory_reset() — writes 0xFFFF to EEPROM[0x00..0x07].

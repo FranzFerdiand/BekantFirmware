@@ -1,4 +1,3 @@
-
 // PIC16LF1938 Configuration Bit Settings
 
 // 'C' source line config statements
@@ -20,7 +19,7 @@
 #pragma config PLLEN = OFF      // PLL Enable (4x PLL disabled)
 #pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
 #pragma config BORV = HI        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), high trip point selected.)
-#pragma config LVP = OFF        // Low-Voltage Programming Enable (High-voltage on MCLR/VPP must be used for programming)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Required for 3.3V ESP32 ICSP flashing!)
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
@@ -32,5 +31,3 @@
 #ifdef BEKANT_TEST_SYNTAX
 #include "test_sfr_stubs.h"
 #endif
-
-

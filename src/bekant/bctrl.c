@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include "bctrl.h"
 #include "endstop.h"
+#include "radiator_config.h"
 #include "../lin/lin_d.h"
 
 void (*bctrl_report_pos)(int16_t pos);
@@ -235,6 +236,9 @@ void bctrl_populate_cmd() {
             if (decel_counter == 0) {
                 // subtract overshoot from min
                 decel_target = encoder_min - BCTRL_DECEL_MARGIN;
+                if (decel_target < RADIATOR_MIN_POS) {
+                    decel_target = RADIATOR_MIN_POS;
+                }
             }
 
             cmd_data.encoder = decel_target;
@@ -254,6 +258,11 @@ void bctrl_populate_cmd() {
             break;
 
         case BCTRL_DOWN:
+            // Hardware-level radiator protection: stop if either leg enters the threshold
+            if (encoder_min <= (RADIATOR_MIN_POS + RADIATOR_BRAKE_MARGIN)) {
+                bctrl_set_target(BCTRL_STOP);
+            }
+
             if (error_cond) {
                 // encoder zero when in error state
                 cmd_data.encoder = 0;
